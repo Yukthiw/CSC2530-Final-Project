@@ -1,1 +1,1 @@
-# CSC2530-FInal-Project
+# CSC2530-Final-Project
