@@ -106,9 +106,6 @@ class NuscData(Dataset):
                 radar_pc_hom = np.vstack((radar_pc.points[:3, :], np.ones((1, radar_pc.nbr_points()))))
                 radar_pc_ego = (radar_to_ego @ radar_pc_hom)[:3, :]
 
-                # Transform radar points from Ego → LiDAR frame
-                radar_pc_lidar = (ego_to_lidar @ np.vstack((radar_pc_ego, np.ones((1, radar_pc_ego.shape[1])))))[:3, :]
-
                 # Preserve additional radar metadata (velocity, RCS, etc.)
                 radar_metadata = radar_pc.points[3:, :]
 
@@ -131,21 +128,33 @@ class NuscData(Dataset):
         return torch.Tensor(radar_points_merged.T)  # Convert to shape (N, 19)
 
     def get_lidar_data(self, rec):
-        """
-        Loads the LiDAR point cloud.
+    """
+    Loads the LiDAR point cloud and transforms it to the ego-vehicle frame.
 
-        Args:
-            rec: NuScenes sample record.
+    Args:
+        rec: NuScenes sample record.
 
-        Returns:
-            torch.Tensor: LiDAR point cloud (shape: `[M, 3]`).
-        """
-        lidar_sample_data = self.nusc.get('sample_data', rec['data']['LIDAR_TOP'])
-        lidar_path = os.path.join(self.dataroot, lidar_sample_data['filename'])
-        lidar_pc = np.fromfile(lidar_path, dtype=np.float32).reshape(-1, 5)[:, :3]  # Discard intensity & reflectance
-        return torch.Tensor(lidar_pc)
+    Returns:
+        torch.Tensor: Transformed LiDAR point cloud (shape: `[M, 3]`).
+    """
+    # Load LiDAR point cloud 
+    lidar_sample_data = self.nusc.get('sample_data', rec['data']['LIDAR_TOP'])
+    lidar_path = os.path.join(self.dataroot, lidar_sample_data['filename'])
+    lidar_pc = np.fromfile(lidar_path, dtype=np.float32).reshape(-1, 5)[:, :3]  # Only take XYZ
 
-    def __getitem__(self, index):
+    # Get LiDAR → Ego transformation matrix
+    lidar_calib = self.nusc.get('calibrated_sensor', lidar_sample_data['calibrated_sensor_token'])
+    lidar_to_ego = transform_matrix(lidar_calib['translation'], Quaternion(lidar_calib['rotation']))
+
+    # Convert to homogeneous coordinates (4D)
+    lidar_pc_hom = np.hstack((lidar_pc, np.ones((lidar_pc.shape[0], 1))))  # Shape: [M, 4]
+
+    # Apply LiDAR → Ego transformation
+    lidar_pc_ego = (lidar_to_ego @ lidar_pc_hom.T)[:3, :].T  # Shape: [M, 3]
+
+    return torch.Tensor(lidar_pc_ego)
+
+def __getitem__(self, index):
         """
         Retrieves a sample, loading radar and LiDAR data.
 
