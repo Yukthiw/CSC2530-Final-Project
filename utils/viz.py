@@ -1,5 +1,4 @@
 import matplotlib.pyplot as plt
-import torch
 
 def visualize_radar_lidar_bev(radar_pc, lidar_pc, save_path=None):
     """
@@ -33,4 +32,3 @@ def visualize_radar_lidar_bev(radar_pc, lidar_pc, save_path=None):
         print(f"Saved BEV visualization to {save_path}")
     else:
         plt.show()
-

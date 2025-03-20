@@ -161,8 +161,24 @@ class NuscData(Dataset):
             radar_pc = self.get_radar_data(rec, nsweeps=self.nsweeps, min_distance=2.2)
             lidar_pc = self.get_lidar_data(rec)
 
+            # Trimming/Padding radar points
+            V = 700 * self.nsweeps
+            num_points = radar_pc.shape[0]
+
+            if num_points > V:
+                # Trim excess points (randomly)
+                idx = torch.randperm(num_points)[:V]  # Random subset
+                radar_data = radar_pc[idx]
+
+            elif num_points < V:
+                # Pad with zeros if fewer points exist
+                pad_needed = V - num_points
+                pad_tensor = torch.zeros((pad_needed, radar_data.shape[1]), dtype=lidar_pc.dtype)
+                radar_data = torch.cat([radar_data, pad_tensor], dim=0)
+            else: 
+                radar_data = radar_pc
             return {
-                'radar': radar_pc,  # Shape: (N, 19)
+                'radar': radar_data,  # Shape: (700*nsweeps, 19)
                 'lidar': lidar_pc   # Shape: (M, 3)
             }
 
