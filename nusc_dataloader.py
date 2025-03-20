@@ -68,12 +68,6 @@ class NuscData(Dataset):
         
         all_radar_points = []
 
-        # Get LiDAR transformation (Ego → LiDAR)
-        lidar_sample_data = self.nusc.get('sample_data', rec['data']['LIDAR_TOP'])
-        lidar_calib = self.nusc.get('calibrated_sensor', lidar_sample_data['calibrated_sensor_token'])
-        lidar_to_ego = transform_matrix(lidar_calib['translation'], Quaternion(lidar_calib['rotation']))
-        ego_to_lidar = np.linalg.inv(lidar_to_ego)
-
         for sensor in radar_sensors:
             if sensor not in rec['data']:
                 continue
@@ -127,51 +121,50 @@ class NuscData(Dataset):
 
         return torch.Tensor(radar_points_merged.T)  # Convert to shape (N, 19)
 
+
     def get_lidar_data(self, rec):
-    """
-    Loads the LiDAR point cloud and transforms it to the ego-vehicle frame.
-
-    Args:
-        rec: NuScenes sample record.
-
-    Returns:
-        torch.Tensor: Transformed LiDAR point cloud (shape: `[M, 3]`).
-    """
-    # Load LiDAR point cloud 
-    lidar_sample_data = self.nusc.get('sample_data', rec['data']['LIDAR_TOP'])
-    lidar_path = os.path.join(self.dataroot, lidar_sample_data['filename'])
-    lidar_pc = np.fromfile(lidar_path, dtype=np.float32).reshape(-1, 5)[:, :3]  # Only take XYZ
-
-    # Get LiDAR → Ego transformation matrix
-    lidar_calib = self.nusc.get('calibrated_sensor', lidar_sample_data['calibrated_sensor_token'])
-    lidar_to_ego = transform_matrix(lidar_calib['translation'], Quaternion(lidar_calib['rotation']))
-
-    # Convert to homogeneous coordinates (4D)
-    lidar_pc_hom = np.hstack((lidar_pc, np.ones((lidar_pc.shape[0], 1))))  # Shape: [M, 4]
-
-    # Apply LiDAR → Ego transformation
-    lidar_pc_ego = (lidar_to_ego @ lidar_pc_hom.T)[:3, :].T  # Shape: [M, 3]
-
-    return torch.Tensor(lidar_pc_ego)
-
-def __getitem__(self, index):
         """
-        Retrieves a sample, loading radar and LiDAR data.
-
+        Loads the LiDAR point cloud and transforms it to the ego-vehicle frame.
         Args:
-            index (int): Sample index.
-
+            rec: NuScenes sample record.
         Returns:
-            dict: Dictionary with 'radar' and 'lidar' point clouds.
+            torch.Tensor: Transformed LiDAR point cloud (shape: `[M, 3]`).
         """
-        rec = self.ixes[index]
-        radar_pc = self.get_radar_data(rec, nsweeps=self.nsweeps, min_distance=2.2)
-        lidar_pc = self.get_lidar_data(rec)
+        # Load LiDAR point cloud 
+        lidar_sample_data = self.nusc.get('sample_data', rec['data']['LIDAR_TOP'])
+        lidar_path = os.path.join(self.dataroot, lidar_sample_data['filename'])
+        lidar_pc = np.fromfile(lidar_path, dtype=np.float32).reshape(-1, 5)[:, :3]  # Only take XYZ
 
-        return {
-            'radar': radar_pc,  # Shape: (N, 19)
-            'lidar': lidar_pc   # Shape: (M, 3)
-        }
+        # Get LiDAR → Ego transformation matrix
+        lidar_calib = self.nusc.get('calibrated_sensor', lidar_sample_data['calibrated_sensor_token'])
+        lidar_to_ego = transform_matrix(lidar_calib['translation'], Quaternion(lidar_calib['rotation']))
+
+        # Convert to homogeneous coordinates (4D)
+        lidar_pc_hom = np.hstack((lidar_pc, np.ones((lidar_pc.shape[0], 1))))  # Shape: [M, 4]
+
+        # Apply LiDAR → Ego transformation
+        lidar_pc_ego = (lidar_to_ego @ lidar_pc_hom.T)[:3, :].T  # Shape: [M, 3]
+
+        return torch.Tensor(lidar_pc_ego)
+
+    def __getitem__(self, index):
+            """
+            Retrieves a sample, loading radar and LiDAR data.
+
+            Args:
+                index (int): Sample index.
+
+            Returns:
+                dict: Dictionary with 'radar' and 'lidar' point clouds.
+            """
+            rec = self.ixes[index]
+            radar_pc = self.get_radar_data(rec, nsweeps=self.nsweeps, min_distance=2.2)
+            lidar_pc = self.get_lidar_data(rec)
+
+            return {
+                'radar': radar_pc,  # Shape: (N, 19)
+                'lidar': lidar_pc   # Shape: (M, 3)
+            }
 
     def __len__(self):
         return len(self.ixes)
