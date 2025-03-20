@@ -104,7 +104,7 @@ class NuscData(Dataset):
                 radar_metadata = radar_pc.points[3:, :]
 
                 # Append transformed radar data with metadata
-                new_radar_points = np.vstack((radar_pc_lidar, radar_metadata))
+                new_radar_points = np.vstack((radar_pc_ego, radar_metadata))
                 all_radar_points.append(new_radar_points)
 
                 # Move to previous sweep (if available)
