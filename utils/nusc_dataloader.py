@@ -51,76 +51,64 @@ class NuscData(Dataset):
                 if self.nusc.get('scene', samp['scene_token'])['name'] in self.scenes]
 
     def get_radar_data(self, rec, nsweeps=1, min_distance=2.2):
-        """
-        Loads radar data from all 5 sensors, applies NuScenes filtering, merges sweeps,
-        and transforms into the LiDAR coordinate system.
-
-        Args:
-            rec: NuScenes sample record.
-            nsweeps (int): Number of past radar sweeps to aggregate.
-            min_distance (float): Minimum allowed distance for radar points.
-
-        Returns:
-            torch.Tensor: Merged radar point cloud (shape: `[N, 19]`), aligned to the LiDAR frame.
-        """
         radar_sensors = ['RADAR_FRONT', 'RADAR_FRONT_LEFT', 'RADAR_FRONT_RIGHT',
-                         'RADAR_BACK_LEFT', 'RADAR_BACK_RIGHT']
-        
+                        'RADAR_BACK_LEFT', 'RADAR_BACK_RIGHT']
+
         all_radar_points = []
+
+        # Reference time (same across all radar sensors)
+        ref_sd_token = rec['data']['RADAR_FRONT']
+        ref_sd_rec = self.nusc.get('sample_data', ref_sd_token)
+        ref_time = 1e-6 * ref_sd_rec['timestamp']  # in seconds
 
         for sensor in radar_sensors:
             if sensor not in rec['data']:
                 continue
 
-            # Load radar sample data
             radar_sample_data = self.nusc.get('sample_data', rec['data'][sensor])
-            current_sd_rec = radar_sample_data  # Start with the latest sweep
+            current_sd_rec = radar_sample_data
 
             for _ in range(nsweeps):
                 if current_sd_rec is None:
-                    break  # No more sweeps available
+                    break
 
-                # Load radar point cloud
                 radar_pc = RadarPointCloud.from_file(os.path.join(self.dataroot, current_sd_rec['filename']))
 
-                # Apply NuScenes' default filtering
                 if self.use_radar_filters:
                     RadarPointCloud.default_filters()
                 else:
                     RadarPointCloud.disable_filters()
 
-                # Remove close-range artifacts
                 radar_pc.remove_close(min_distance)
 
-                # Get radar sensor transformation (Radar → Ego)
+                # Transform radar points to Ego frame
                 radar_calib = self.nusc.get('calibrated_sensor', current_sd_rec['calibrated_sensor_token'])
                 radar_to_ego = transform_matrix(radar_calib['translation'], Quaternion(radar_calib['rotation']))
-
-                # Transform radar points to the Ego frame
                 radar_pc_hom = np.vstack((radar_pc.points[:3, :], np.ones((1, radar_pc.nbr_points()))))
                 radar_pc_ego = (radar_to_ego @ radar_pc_hom)[:3, :]
 
-                # Preserve additional radar metadata (velocity, RCS, etc.)
                 radar_metadata = radar_pc.points[3:, :]
 
-                # Append transformed radar data with metadata
-                new_radar_points = np.vstack((radar_pc_ego, radar_metadata))
+                # Time lag feature
+                current_time = 1e-6 * current_sd_rec['timestamp']
+                time_lag = ref_time - current_time
+                times = time_lag * np.ones((1, radar_pc.nbr_points()))
+
+                # Combine everything to (19, N)
+                new_radar_points = np.vstack((radar_pc_ego, radar_metadata, times))
                 all_radar_points.append(new_radar_points)
 
-                # Move to previous sweep (if available)
                 if current_sd_rec['prev'] == '':
                     break
                 else:
                     current_sd_rec = self.nusc.get('sample_data', current_sd_rec['prev'])
 
-        # Merge all radar points into a single array
         if len(all_radar_points) > 0:
-            radar_points_merged = np.hstack(all_radar_points)  # Shape: (19, N_total)
+            radar_points_merged = np.hstack(all_radar_points)  # (19, N_total)
         else:
-            radar_points_merged = np.zeros((19, 0))  # Empty placeholder
+            radar_points_merged = np.zeros((19, 0))
 
-        return torch.Tensor(radar_points_merged.T)  # Convert to shape (N, 19)
-
+        return torch.Tensor(radar_points_merged.T)  # (N_total, 19)
 
     def get_lidar_data(self, rec):
         """
@@ -160,7 +148,7 @@ class NuscData(Dataset):
             rec = self.ixes[index]
             radar_pc = self.get_radar_data(rec, nsweeps=self.nsweeps, min_distance=2.2)
             lidar_pc = self.get_lidar_data(rec)
-
+            
             # Trimming/Padding radar points
             V = 700 * self.nsweeps
             num_points = radar_pc.shape[0]
@@ -173,8 +161,8 @@ class NuscData(Dataset):
             elif num_points < V:
                 # Pad with zeros if fewer points exist
                 pad_needed = V - num_points
-                pad_tensor = torch.zeros((pad_needed, radar_data.shape[1]), dtype=lidar_pc.dtype)
-                radar_data = torch.cat([radar_data, pad_tensor], dim=0)
+                pad_tensor = torch.zeros((pad_needed, radar_pc.shape[1]), dtype=radar_pc.dtype)
+                radar_data = torch.cat([radar_pc, pad_tensor], dim=0)
             else: 
                 radar_data = radar_pc
             return {

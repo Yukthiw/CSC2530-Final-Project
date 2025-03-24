@@ -10,6 +10,7 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
+import utils.basic
 import utils.geom
 
 # Some consts used in BEVCar, these are subject to change TODO: Move these somewhere that make more sense
@@ -26,6 +27,7 @@ XMIN, XMAX = -50, 50
 ZMIN, ZMAX = -50, 50
 YMIN, YMAX = -5, 5
 bounds = (XMIN, XMAX, YMIN, YMAX, ZMIN, ZMAX)
+Z, Y, X = 200, 8, 200
 
 def extract_radar_encoder_checkpoints(checkpoint_path: str, save_path: str):
     '''
@@ -219,40 +221,26 @@ class Vox_util(object):
             xyz_mem = self.Ref2Mem(xyz_ref, Z, Y, X, assert_cube=assert_cube)
 
             xyz_zero = self.Ref2Mem(xyz_ref[:, 0:1] * 0, Z, Y, X, assert_cube=assert_cube)
-        feats = self.get_feat_occupancy(xyz_mem, feats, Z, Y, X, clean_eps=clean_eps, xyz_zero=xyz_zero)
+        feats = self.get_feat_occupancy(xyz_mem, feats, Z, Y, X, clean_eps=clean_eps, xyz_zero=xyz_zero, is_voxelnet=True)
         return feats
 
-    def voxelize_xyz_and_feats_voxelnet(self, xyz_ref, feats, Z, Y, X, already_mem=False, assert_cube=False,
+    def voxelize_xyz_and_feats_voxelnet(self, xyz_ref, feats, Z, Y, X, assert_cube=False,
                                         clean_eps=0, use_radar_occupancy_map=False):
         B, N, D = list(xyz_ref.shape)  # point coords: B, N=num_of_points, D=3
-        B2, N2, D2 = list(feats.shape)  # point features: B, N2=num_of_points, D2=16 -> dims of metadata
+        B2, N2, D2 = list(feats.shape)  # point features: B, N2=num_of_points, D2=15 -> dims of metadata
         assert (D == 3)
         assert (B == B2)
         assert (N == N2)
-        if already_mem:
-            xyz_mem = xyz_ref
-        else:
-            # transform from measurement coords to memory coords
-            xyz_mem = self.Ref2Mem(xyz_ref, Z, Y, X, assert_cube=assert_cube)
+        xyz_mem = self.Ref2Mem(xyz_ref, Z, Y, X, assert_cube=assert_cube)
 
-            xyz_zero = self.Ref2Mem(xyz_ref[:, 0:1] * 0, Z, Y, X, assert_cube=assert_cube)
-        # feats = self.get_feat_occupancy(xyz_mem, feats, Z, Y, X, clean_eps=clean_eps, xyz_zero=xyz_zero)
+        xyz_zero = self.Ref2Mem(xyz_ref[:, 0:1] * 0, Z, Y, X, assert_cube=assert_cube)
 
-        is_voxelnet = True
-        if is_voxelnet:
-            voxel_input_feature_buffer, voxel_coordinate_buffer, number_of_occupied_voxels = \
-                self.get_voxelnet_dense_feature_voxels(xyz_mem, feats, Z, Y, X, clean_eps=clean_eps,
-                                                       xyz_zero=xyz_zero,
-                                                       use_radar_occupancy_map=use_radar_occupancy_map)
+        voxel_input_feature_buffer, voxel_coordinate_buffer, number_of_occupied_voxels = \
+            self.get_voxelnet_dense_feature_voxels(xyz_mem, feats, Z, Y, X, clean_eps=clean_eps,
+                                                    xyz_zero=xyz_zero,
+                                                    use_radar_occupancy_map=use_radar_occupancy_map)
 
-            return voxel_input_feature_buffer, voxel_coordinate_buffer, number_of_occupied_voxels
-
-        is_pointnet = False
-        if is_pointnet:
-            radar_point_cloud_feats_filtered = self.get_voxelnet_dense_feature_voxels(
-                xyz_mem, feats, Z, Y, X, clean_eps=clean_eps, xyz_zero=xyz_zero)
-
-            return radar_point_cloud_feats_filtered
+        return voxel_input_feature_buffer, voxel_coordinate_buffer, number_of_occupied_voxels
 
     def get_occupancy(self, xyz, Z, Y, X, clean_eps=0, xyz_zero=None):
         # xyz is B x N x 3 and in mem coords
@@ -370,7 +358,7 @@ class Vox_util(object):
         if is_voxelnet:
             """ Work in Progress """
             # ############################# START OF VOXELNET PREPROCESSING ################################################
-            # like in VoxelNet  -> define tensor KxTx7  -> BxKxTx19  K: number of maximum occupied voxels here: 3500
+            # like in VoxelNet  -> define tensor KxTx7  -> BxKxTx18  K: number of maximum occupied voxels here: 3500
             # T=10
             voxel_input_buffer = torch.zeros((B, 3500, 10, 3 + feat.shape[-1]), device=x.device)
             voxel_coord_buffer = torch.zeros((B, 3500, 3), device=x.device)
@@ -485,166 +473,104 @@ class Vox_util(object):
         return feat_voxels
 
     def get_voxelnet_dense_feature_voxels(self, xyz, feat, Z, Y, X, clean_eps=0, xyz_zero=None,
-                                          use_radar_occupancy_map=False):
-        # xyz is B x N x 3 and in mem coords
-        # feat is B x N x D
-        # we want to fill a voxel tensor with 1's at these inds
-        B, N, C = list(xyz.shape)
-        B2, N2, D2 = list(feat.shape)
-        assert (C == 3)
-        assert (B == B2)
-        assert (N == N2)
-
-        # these papers say simple 1/0 occupancy is ok:
-        #  http://openaccess.thecvf.com/content_cvpr_2018/papers/Yang_PIXOR_Real-Time_3d_CVPR_2018_paper.pdf
-        #  http://openaccess.thecvf.com/content_cvpr_2018/papers/Luo_Fast_and_Furious_CVPR_2018_paper.pdf
-        # cont fusion says they do 8-neighbor interp
-        # voxelnet does occupancy but with a bit of randomness in terms of the reflectance value i think
-
-        inbounds = self.get_inbounds(xyz, Z, Y, X, already_mem=True)
-        x, y, z = xyz[:, :, 0], xyz[:, :, 1], xyz[:, :, 2]
-        mask = torch.zeros_like(x)
-        mask[inbounds] = 1.0
-
-        if xyz_zero is not None:
-            # only take points that are beyond a thresh of zero  -> of 0.1 ?!  -> changed to 0.3
-            dist = torch.norm(xyz_zero - xyz, dim=2)
-            mask[dist < 0.1] = 0  # default: 0.1
-
-        if clean_eps > 0:
-            # only take points that are already near centers
-            xyz_round = torch.round(xyz)  # B, N, 3
-            dist = torch.norm(xyz_round - xyz, dim=2)
-            mask[dist > clean_eps] = 0
-
-        # remove dummy coords from data for pointnet
-        dummy_coords = torch.stack((x[:, -1], y[:, -1], z[:, -1]), dim=1)
-        dummy_coords_reshape = dummy_coords.unsqueeze(dim=1)
-        mask = torch.where(xyz == dummy_coords_reshape, 0.0, mask.unsqueeze(-1))
-        mask = mask[:, :, 0]
-        xyz_zero_prefiltered = torch.where(xyz == dummy_coords, 0.0, xyz)
-        xyz_zero_prefiltered_np = xyz_zero_prefiltered.detach().cpu().numpy()
-        x, y, z = xyz_zero_prefiltered[:, :, 0], xyz_zero_prefiltered[:, :, 1], xyz_zero_prefiltered[:, :, 2]
-
-        # set the invalid guys to zero
-        # we then need to zero out 0,0,0
-        # (this method seems a bit clumsy)
-        x = x * mask  # B, N
-        y = y * mask
-        z = z * mask
-
-        # add mask as an additional feature
-        feat = torch.cat((feat, mask.unsqueeze(-1)), dim=2)
-        feat = feat * mask.unsqueeze(-1)  # B, N, D=16
-
-        # for pointnet
-        radar_point_cloud_filtered = torch.zeros_like(xyz)
-        radar_point_cloud_filtered[:, :, 0] = x
-        radar_point_cloud_filtered[:, :, 1] = y
-        radar_point_cloud_filtered[:, :, 2] = z
-
-        # ZYX fromat  -> actually correct
-        # radar_point_cloud_filtered[:, :, 0] = z
-        # radar_point_cloud_filtered[:, :, 1] = y
-        # radar_point_cloud_filtered[:, :, 2] = x
-
-        radar_point_cloud_feats_filtered = torch.cat([radar_point_cloud_filtered, feat], dim=2)
-        radar_point_cloud_feats_filtered_np = radar_point_cloud_feats_filtered.detach().cpu().numpy()
-
-        is_pointnet = False
-        if is_pointnet:
-            return radar_point_cloud_feats_filtered
-        # New store radar points in voxels
-
-        # ############################# START OF VOXELNET PREPROCESSING ################################################
-        # like in VoxelNet  -> define tensor KxTx7  -> BxKxTx19  K: number of maximum occupied voxels here: 3500
-        # T=10
-        voxel_input_buffer = torch.zeros((B, 3500, 10, 3 + feat.shape[-1]), device=x.device)
-        voxel_coord_buffer = torch.zeros((B, 3500, 3), device=x.device)
-
-        # get last element which is the transformed placeholder element:
-        dummy_coords = torch.stack((x[:, -1], y[:, -1], z[:, -1]), dim=1)
-        # randomize
+                                        use_radar_occupancy_map=False):
+        """
+        Build voxel features according to VoxelNet:
+        - Input:
+            xyz: B x N x 3 (points in memory coordinates)
+            feat: B x N x 1 (reflectance; if feat has extra channels, slice out the relevant one)
+        - Output:
+            voxel_input_buffer: B x K x T x 7
+            voxel_coord_buffer: B x K x 3   (voxel coordinate, in (z,y,x) order)
+            number_of_occupied_voxels: B
+        """
+        # Parameters
+        B, N, _ = xyz.shape
+        max_voxels = 3500  # maximum number of nonempty voxels
+        T = 10           # maximum points per voxel
+        
+        # --- Permute the points randomly to avoid ordering bias ---
         perm = torch.randperm(N)
-        x = x[:, perm]
-        y = y[:, perm]
-        z = z[:, perm]
-        feat = feat[:, perm]
-
+        xyz = xyz[:, perm, :]
+        feat = feat[:, perm, :]  # assume feat has shape B x N x 1 (reflectance)
+        
+        # --- Compute voxel indices ---
+        # VoxelNet uses the “memory” coordinates for voxelization.
+        # For voxel indexing, the original paper reorders coordinates as (z,y,x).
         radar_point_cloud = torch.zeros_like(xyz)
-        # radar_point_cloud[:, :, 0] = x
-        # radar_point_cloud[:, :, 1] = y
-        # radar_point_cloud[:, :, 2] = z
-        # in ZYX Format
-        radar_point_cloud[:, :, 0] = z
-        radar_point_cloud[:, :, 1] = y
-        radar_point_cloud[:, :, 2] = x
-
-        voxel_indices = torch.round(radar_point_cloud).int()
-        # clamp values so that they do not exceed the valid boundaries
-        voxel_indices[:, :, 0] = torch.clamp(voxel_indices[:, :, 0], 0, Z - 1).int()
-        voxel_indices[:, :, 1] = torch.clamp(voxel_indices[:, :, 1], 0, Y - 1).int()
-        voxel_indices[:, :, 2] = torch.clamp(voxel_indices[:, :, 2], 0, X - 1).int()
-
-        voxel_dict_b = {}
-
-        number_off_occupied_voxels = torch.zeros(B, device=x.device)
-
+        radar_point_cloud[:, :, 0] = xyz[:, :, 2]  # use z coordinate
+        radar_point_cloud[:, :, 1] = xyz[:, :, 1]  # y coordinate
+        radar_point_cloud[:, :, 2] = xyz[:, :, 0]  # x coordinate
+        
+        # Round the coordinates to obtain voxel indices and clamp to grid bounds
+        voxel_indices = torch.round(radar_point_cloud).int()  # shape: B x N x 3
+        voxel_indices[:, :, 0] = torch.clamp(voxel_indices[:, :, 0], 0, Z - 1)
+        voxel_indices[:, :, 1] = torch.clamp(voxel_indices[:, :, 1], 0, Y - 1)
+        voxel_indices[:, :, 2] = torch.clamp(voxel_indices[:, :, 2], 0, X - 1)
+        
+        # --- Group points by voxel ---
+        # Create a list (per batch element) mapping each voxel index (as tuple) to a list of point features.
+        # Each point is represented by its (x, y, z, r) in mem coordinates.
+        voxel_dicts = []
         for b in range(B):
             voxel_dict = {}
-            voxel_k_dict = {}
-            k = 0
-            t = 0
-            k_coord_buf = 0
-            for i, voxel_idx in enumerate(voxel_indices[b, :, :]):
-                voxel_idx = tuple(voxel_idx.tolist())
-                query_point = torch.tensor((x[b, i], y[b, i], z[b, i]), device=x.device).unsqueeze(dim=0)
-                if voxel_idx in voxel_dict and not \
-                        all([v_idx == 0 for v_idx in voxel_idx]) and not \
-                        torch.eq(query_point, dummy_coords[b]).all().item() and voxel_k_dict[voxel_idx][1] < 9:
-                    # add to existing points
-                    voxel_dict[voxel_idx].append(i)
-                    k, t = voxel_k_dict[voxel_idx]
+            for i in range(N):
+                # Use voxel index as a key (tuple format, e.g., (z, y, x))
+                key = tuple(voxel_indices[b, i].tolist())
+                # Optionally ignore points that fall in the zero voxel if needed:
+                if key == (0, 0, 0):
+                    continue
+                # Extract point coordinates and reflectance value.
+                point = xyz[b, i]         # shape: (3,)
+                r_val = feat[b, i]        # shape: (1,)
+                # Represent the point as a tuple: (x, y, z, r)
+                point_feat = (point[0].item(), point[1].item(), point[2].item(), r_val.item())
+                if key in voxel_dict:
+                    if len(voxel_dict[key]) < T:  # only keep up to T points per voxel
+                        voxel_dict[key].append(point_feat)
+                else:
+                    voxel_dict[key] = [point_feat]
+            voxel_dicts.append(voxel_dict)
+        
+        # --- Allocate output buffers ---
+        voxel_input_buffer = torch.zeros((B, max_voxels, T, 7), device=xyz.device)
+        voxel_coord_buffer = torch.zeros((B, max_voxels, 3), device=xyz.device, dtype=torch.int)
+        number_of_occupied_voxels = torch.zeros((B,), device=xyz.device, dtype=torch.int)
+        
+        # --- For each voxel, compute the 7D feature for each point ---
+        for b in range(B):
+            voxel_dict = voxel_dicts[b]
+            voxel_keys = list(voxel_dict.keys())
+            num_voxels = min(len(voxel_keys), max_voxels)
+            number_of_occupied_voxels[b] = num_voxels
+            for k in range(num_voxels):
+                key = voxel_keys[k]
+                # Save the voxel coordinate (in (z, y, x) order)
+                voxel_coord_buffer[b, k, :] = torch.tensor(key, device=xyz.device)
+                points = voxel_dict[key]  # list of (x, y, z, r)
+                # Convert list of points to tensor: shape (n_points, 4)
+                points_tensor = torch.tensor(points, device=xyz.device)
+                # Compute centroid of the points (only over the x,y,z coordinates)
+                centroid = points_tensor[:, :3].mean(dim=0)  # shape: (3,)
+                n_points = points_tensor.shape[0]
+                # Build the 7D feature for each point: [x, y, z, r, (x-vx), (y-vy), (z-vz)]
+                features = torch.zeros((n_points, 7), device=xyz.device)
+                features[:, :3] = points_tensor[:, :3]            # x, y, z
+                features[:, 3:4] = points_tensor[:, 3:4]            # reflectance r
+                features[:, 4:] = points_tensor[:, :3] - centroid.unsqueeze(0)
+                
+                # If there are more than T points, randomly sample T; otherwise, pad with zeros.
+                if n_points >= T:
+                    sample_idx = torch.randperm(n_points)[:T]
+                    features = features[sample_idx, :]
+                else:
+                    padded = torch.zeros((T, 7), device=xyz.device)
+                    padded[:n_points, :] = features
+                    features = padded
+                # Store in the voxel input buffer
+                voxel_input_buffer[b, k, :, :] = features
+        return voxel_input_buffer, voxel_coord_buffer, number_of_occupied_voxels
 
-                    x_t = x[b, i].clone().detach().unsqueeze(dim=0)
-                    y_t = y[b, i].clone().detach().unsqueeze(dim=0)
-                    z_t = z[b, i].clone().detach().unsqueeze(dim=0)
-                    feat_t = feat[b, i].clone().detach()
-                    # Z,Y,X order
-                    data = torch.cat([z_t, y_t, x_t, feat_t])
-                    voxel_input_buffer[b, k, t + 1, :] = data
-                    voxel_k_dict[voxel_idx] = k, t + 1
-
-                    # debug:
-                    # voxel_input_buffer_np = voxel_input_buffer.detach().cpu().numpy()
-
-                elif not all([v_idx == 0 for v_idx in voxel_idx]) and not \
-                        torch.eq(query_point, dummy_coords[b]).all().item():
-                    # add new key
-                    voxel_dict[voxel_idx] = [i]
-                    voxel_coord_buffer[b, k_coord_buf, :] = torch.tensor(voxel_idx)
-
-                    # fix: "it is recommended to use sourceTensor.clone().detach()"
-                    x_t = x[b, i].clone().detach().unsqueeze(dim=0)
-                    y_t = y[b, i].clone().detach().unsqueeze(dim=0)
-                    z_t = z[b, i].clone().detach().unsqueeze(dim=0)
-                    feat_t = feat[b, i].clone().detach()
-
-                    # Z,Y,X order
-                    data = torch.cat([z_t, y_t, x_t, feat_t])
-                    voxel_input_buffer[b, k_coord_buf, 0, :] = data
-                    voxel_k_dict[voxel_idx] = [k_coord_buf, 0]
-                    k_coord_buf += 1
-
-                    # debug:
-                    # voxel_input_buffer_np = voxel_input_buffer.detach().cpu().numpy()
-                    # voxel_coord_buffer_np = voxel_coord_buffer.detach().cpu().numpy()
-
-            number_off_occupied_voxels[b] = k_coord_buf
-
-        # radar_occupancy_map = mask
-        # (B, 3500, 10, 19) , (B,3500, 3)
-        return voxel_input_buffer, voxel_coord_buffer, number_off_occupied_voxels  # , radar_occupancy_map
 
     def unproject_image_to_mem(self, rgb_camB, pixB_T_camA, camB_T_camA, Z, Y, X, assert_cube=False, xyz_camA=None):
         # rgb_camB is B x C x H x W
@@ -855,26 +781,24 @@ class Vox_util(object):
         else:
             return mask
 
-    def voxelize(self, radar_pc, nsweeps=1):
+    def voxelize(self, radar_pc):
         '''
         This is a convenience wrapper that takes in ego frame radar points and returns voxel
         data.
         '''
+        # As per https://github.com/nutonomy/nuscenes-devkit/blob/master/python-sdk/nuscenes/utils/data_classes.py
+        # We only need reflectance information for voxelnet
+        reflectance_ix = 5 
         B, N, D = radar_pc.shape
         assert D == 19
         xyz_rad = radar_pc[:, :, :3]  # (B, N, 3)
-        meta_rad = radar_pc[:, :, 3:]  # (B, N, 16)
-        voxel_input_feature_buffer = []
-        voxel_coordinate_buffer = []
-        number_of_occupied_voxels = []
-        for b in range(B):
-            vox_input, vox_coords, num_voxels = self.voxelize_xyz_and_feats_voxelnet(
-                xyz_rad[b].unsqueeze(0),  # (1, N, 3)
-                meta_rad[b].unsqueeze(0),  # (1, N, F)
-                self.Z, self.Y, self.X,
-                assert_cube=False,
-                use_radar_occupancy_map=False
-            )
-            voxel_input_feature_buffer.append(vox_input)
-            voxel_coordinate_buffer.append(vox_coords)
-            number_of_occupied_voxels.append(num_voxels)
+        meta_rad = radar_pc[:, :, reflectance_ix].unsqueeze(-1)  # (B, N, 1)
+        vox_input, vox_coords, num_voxels = self.voxelize_xyz_and_feats_voxelnet(
+            xyz_rad,  # (1, N, 3)
+            meta_rad,  # (1, N, 1)
+            self.Z, self.Y, self.X,
+            assert_cube=False,
+            use_radar_occupancy_map=False
+        )
+
+        return vox_input, vox_coords, num_voxels

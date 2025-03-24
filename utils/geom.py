@@ -2,6 +2,9 @@
 import numpy as np
 import torch
 
+'''
+This is all taken from BEVCAR Repo, necessary for voxelization.
+'''
 
 def eye_4x4(B, device='cuda'):
     rt = torch.eye(4, device=torch.device(device)).view(1, 4, 4).repeat([B, 1, 1])
