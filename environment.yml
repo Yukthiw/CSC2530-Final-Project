@@ -1,0 +1,9 @@
+name: bb_lidar
+dependencies:
+  - python=3.10
+  - numpy==1.22.0
+  - opencv
+  - matplotlib
+  - pip
+  - pip:
+    - -r requirements.txt
