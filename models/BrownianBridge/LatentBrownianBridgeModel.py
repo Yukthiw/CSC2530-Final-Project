@@ -20,21 +20,9 @@ class LatentBrownianBridgeModel(BrownianBridgeModel):
     def __init__(self, model_config):
         super().__init__(model_config)
 
-        self.vqgan = VQModel(**vars(model_config.VQGAN.params)).eval()
-        self.vqgan.train = disabled_train
-        for param in self.vqgan.parameters():
-            param.requires_grad = False
-        print(f"load vqgan from {model_config.VQGAN.params.ckpt_path}")
-
-        # Condition Stage Model
-        if self.condition_key == 'nocond':
-            self.cond_stage_model = None
-        elif self.condition_key == 'first_stage':
-            self.cond_stage_model = self.vqgan
-        elif self.condition_key == 'SpatialRescaler':
-            self.cond_stage_model = SpatialRescaler(**vars(model_config.CondStageParams))
-        else:
-            raise NotImplementedError
+        # TODO: Add encoders here
+        self.radar_encoder = None
+        self.lidar_encoder = None
 
     def get_ema_net(self):
         return self

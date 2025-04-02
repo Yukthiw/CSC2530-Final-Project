@@ -5,8 +5,8 @@ import torch.nn as nn
 import numpy as np
 from einops import rearrange
 
-from model.BrownianBridge.base.util import instantiate_from_config
-from model.BrownianBridge.base.modules.attention import LinearAttention
+from models.BrownianBridge.base.util import instantiate_from_config
+from models.BrownianBridge.base.modules.attention import LinearAttention
 
 
 def get_timestep_embedding(timesteps, embedding_dim):

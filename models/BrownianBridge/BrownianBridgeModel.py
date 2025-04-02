@@ -20,6 +20,7 @@ class BrownianBridgeModel(nn.Module):
         model_params = model_config.BB.params
         self.num_timesteps = model_params.num_timesteps
         self.mt_type = model_params.mt_type
+        # TODO: Look at what max variance params work best here
         self.max_var = model_params.max_var if model_params.__contains__("max_var") else 1
         self.eta = model_params.eta if model_params.__contains__("eta") else 1
         self.skip_sample = model_params.skip_sample
@@ -40,6 +41,9 @@ class BrownianBridgeModel(nn.Module):
         self.denoise_fn = UNetModel(**vars(model_params.UNetParams))
 
     def register_schedule(self):
+        '''
+        Pre-computing variance and mixing coefficients here for forward diffusion process.
+        '''
         T = self.num_timesteps
 
         if self.mt_type == "linear":
@@ -126,6 +130,11 @@ class BrownianBridgeModel(nn.Module):
         return recloss, log_dict
 
     def q_sample(self, x0, y, t, noise=None):
+        '''
+        This is where x_t is calculated for the forward process, we also return the objective
+        from here to calculate loss, in traditional DDPM it would just be predicting the noise
+        but in BBDM paper they use the "grad" loss function (See Algorithm 1 in https://arxiv.org/pdf/2205.07680).
+        '''
         noise = default(noise, lambda: torch.randn_like(x0))
         m_t = extract(self.m_t, t, x0.shape)
         var_t = extract(self.variance_t, t, x0.shape)
@@ -161,6 +170,12 @@ class BrownianBridgeModel(nn.Module):
 
     @torch.no_grad()
     def q_sample_loop(self, x0, y):
+        """
+        For x0 (Noise Lidar) and y (Clean Lidar), both of shape BxCxWxH, sample all timesteps
+        and return list of length num_timesteps of image batches (all would be BxCxWxH). 
+        
+        This is the full forward diffusson process.
+        """
         imgs = [x0]
         for i in tqdm(range(self.num_timesteps), desc='q sampling loop', total=self.num_timesteps):
             t = torch.full((y.shape[0],), i, device=x0.device, dtype=torch.long)
@@ -170,6 +185,9 @@ class BrownianBridgeModel(nn.Module):
 
     @torch.no_grad()
     def p_sample(self, x_t, y, context, i, clip_denoised=False):
+        """
+        Backward diffusion process (one time step).
+        """
         b, *_, device = *x_t.shape, x_t.device
         if self.steps[i] == 0:
             t = torch.full((x_t.shape[0],), self.steps[i], device=x_t.device, dtype=torch.long)
@@ -202,6 +220,9 @@ class BrownianBridgeModel(nn.Module):
 
     @torch.no_grad()
     def p_sample_loop(self, y, context=None, clip_denoised=True, sample_mid_step=False):
+        """
+        Full reverse process.
+        """
         if self.condition_key == "nocond":
             context = None
         else:

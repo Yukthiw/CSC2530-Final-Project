@@ -9,7 +9,7 @@ import torch as th
 import torch.nn as nn
 import torch.nn.functional as F
 
-from model.BrownianBridge.base.modules.diffusionmodules.util import (
+from models.BrownianBridge.base.modules.diffusionmodules.util import (
     checkpoint,
     conv_nd,
     linear,
@@ -18,7 +18,7 @@ from model.BrownianBridge.base.modules.diffusionmodules.util import (
     normalization,
     timestep_embedding,
 )
-from model.BrownianBridge.base.modules.attention import SpatialTransformer
+from models.BrownianBridge.base.modules.attention import SpatialTransformer
 
 
 # dummy replace
@@ -464,9 +464,9 @@ class UNetModel(nn.Module):
         use_scale_shift_norm=False,
         resblock_updown=False,
         use_new_attention_order=False,
-        use_spatial_transformer=False,    # custom transformer support
+        use_spatial_transformer=True,    # custom transformer support
         transformer_depth=1,              # custom transformer support
-        context_dim=None,                 # custom transformer support
+        context_dim=128,                 # custom transformer support
         n_embed=None,                     # custom support for prediction of discrete ids into codebook of first stage vq model
         legacy=True,
         condition_key="concat",
@@ -474,12 +474,6 @@ class UNetModel(nn.Module):
         super().__init__()
         if use_spatial_transformer:
             assert context_dim is not None, 'Fool!! You forgot to include the dimension of your cross-attention conditioning...'
-
-        if context_dim is not None:
-            assert use_spatial_transformer, 'Fool!! You forgot to use the spatial transformer for your cross-attention conditioning...'
-            from omegaconf.listconfig import ListConfig
-            if type(context_dim) == ListConfig:
-                context_dim = list(context_dim)
 
         if num_heads_upsample == -1:
             num_heads_upsample = num_heads
