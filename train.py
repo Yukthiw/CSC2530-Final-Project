@@ -1,4 +1,5 @@
 import os
+from easydict import EasyDict
 import torch
 import yaml
 import sys
@@ -12,7 +13,7 @@ from utils.nusc_dataloader import NuscData
 
 def load_config(path):
     with open(path, 'r') as f:
-        return yaml.safe_load(f)
+        return EasyDict(yaml.safe_load(f))
     
 def train_cbbdm(
     model,

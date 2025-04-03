@@ -523,6 +523,7 @@ class UNetModel(nn.Module):
         input_block_chans = [model_channels]
         ch = model_channels
         ds = 1
+        # Down Steps
         for level, mult in enumerate(channel_mult):
             for _ in range(num_res_blocks):
                 layers = [
@@ -537,6 +538,7 @@ class UNetModel(nn.Module):
                     )
                 ]
                 ch = mult * model_channels
+                # We only do cross-attention at very compressed resolutions
                 if ds in attention_resolutions:
                     if num_head_channels == -1:
                         dim_head = ch // num_heads
@@ -585,6 +587,8 @@ class UNetModel(nn.Module):
                 ds *= 2
                 self._feature_size += ch
 
+
+        # Middle steps
         if num_head_channels == -1:
             dim_head = ch // num_heads
         else:
@@ -622,6 +626,7 @@ class UNetModel(nn.Module):
         )
         self._feature_size += ch
 
+        # Up steps
         self.output_blocks = nn.ModuleList([])
         for level, mult in list(enumerate(channel_mult))[::-1]:
             for i in range(num_res_blocks + 1):
@@ -732,8 +737,11 @@ class UNetModel(nn.Module):
             assert y.shape == (x.shape[0],)
             emb = emb + self.label_emb(y)
 
-        if self.condition_key != 'nocond':
-            x = th.cat([x, context], dim=1)
+        # NOTE: This seems to be incorrect in the original BBDM code so I've commented it out, 
+        # it doesn't make sense to concatenate context (radar latent) with x if we're already passing the context separately for cross attention
+
+        # if self.condition_key != 'nocond':
+        #     x = th.cat([x, context], dim=1)
 
         h = x.type(self.dtype)
         for module in self.input_blocks:
@@ -752,7 +760,7 @@ class UNetModel(nn.Module):
         else:
             return self.out(h)
 
-
+# We don't use this as far as I can tell
 class EncoderUNetModel(nn.Module):
     """
     The half UNet model with attention and timestep embedding.

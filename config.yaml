@@ -76,14 +76,8 @@ model:
         model_channels: 128
         out_channels: 8
         num_res_blocks: 2
-        attention_resolutions: !!python/tuple
-          - 16
-          - 8
-          - 4
-        channel_mult: !!python/tuple
-          - 1
-          - 4
-          - 8
+        attention_resolutions: [16, 8, 4]
+        channel_mult: [1, 4, 8]
         conv_resample: True
         dims: 2
         num_heads: 8

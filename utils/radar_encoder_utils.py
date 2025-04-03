@@ -224,7 +224,7 @@ class Vox_util(object):
         feats = self.get_feat_occupancy(xyz_mem, feats, Z, Y, X, clean_eps=clean_eps, xyz_zero=xyz_zero, is_voxelnet=True)
         return feats
 
-    def voxelize_xyz_and_feats_voxelnet(self, xyz_ref, feats, Z, Y, X, assert_cube=False,
+    def voxelize_xyz_and_feats_voxelnet(self, xyz_ref, feats, Z, Y, X, nsweeps, assert_cube=False,
                                         clean_eps=0, use_radar_occupancy_map=False):
         B, N, D = list(xyz_ref.shape)  # point coords: B, N=num_of_points, D=3
         B2, N2, D2 = list(feats.shape)  # point features: B, N2=num_of_points, D2=15 -> dims of metadata
@@ -236,7 +236,7 @@ class Vox_util(object):
         xyz_zero = self.Ref2Mem(xyz_ref[:, 0:1] * 0, Z, Y, X, assert_cube=assert_cube)
 
         voxel_input_feature_buffer, voxel_coordinate_buffer, number_of_occupied_voxels = \
-            self.get_voxelnet_dense_feature_voxels(xyz_mem, feats, Z, Y, X, clean_eps=clean_eps,
+            self.get_voxelnet_dense_feature_voxels(xyz_mem, feats, Z, Y, X, nsweeps, clean_eps=clean_eps,
                                                     xyz_zero=xyz_zero,
                                                     use_radar_occupancy_map=use_radar_occupancy_map)
 
@@ -472,7 +472,7 @@ class Vox_util(object):
         # B x C x Z x Y x X
         return feat_voxels
 
-    def get_voxelnet_dense_feature_voxels(self, xyz, feat, Z, Y, X, clean_eps=0, xyz_zero=None,
+    def get_voxelnet_dense_feature_voxels(self, xyz, feat, Z, Y, X, nsweeps, clean_eps=0, xyz_zero=None,
                                         use_radar_occupancy_map=False):
         """
         Build voxel features according to VoxelNet:
@@ -486,7 +486,7 @@ class Vox_util(object):
         """
         # Parameters
         B, N, _ = xyz.shape
-        max_voxels = 3500  # maximum number of nonempty voxels
+        max_voxels = 700*nsweeps # maximum number of nonempty voxels
         T = 10           # maximum points per voxel
         
         # --- Permute the points randomly to avoid ordering bias ---
@@ -781,7 +781,7 @@ class Vox_util(object):
         else:
             return mask
 
-    def voxelize(self, radar_pc):
+    def voxelize(self, radar_pc, nsweeps=1):
         '''
         This is a convenience wrapper that takes in ego frame radar points and returns voxel
         data.
@@ -797,8 +797,9 @@ class Vox_util(object):
             xyz_rad,  # (1, N, 3)
             meta_rad,  # (1, N, 1)
             self.Z, self.Y, self.X,
+            nsweeps,
             assert_cube=False,
-            use_radar_occupancy_map=False
+            use_radar_occupancy_map=False,
         )
 
         return vox_input, vox_coords, num_voxels

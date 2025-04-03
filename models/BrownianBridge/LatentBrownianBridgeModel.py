@@ -89,7 +89,8 @@ class LatentBrownianBridgeModel(BrownianBridgeModel):
     @torch.no_grad()
     def encode_radar(self, x):
         model = self.radar_encoder
-        cond_latent = model.encoder(x)
+        # Radar data is a tuple which is unpacked and passed to encoder
+        cond_latent = model.encoder(*x)
         return cond_latent
 
     @torch.no_grad()
