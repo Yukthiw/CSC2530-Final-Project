@@ -101,7 +101,7 @@ class BrownianBridgeModel(nn.Module):
         :param x0: encoded x_ori (Clean Lidar)
         :param y: encoded y_ori (Noisy Lidar)
         :param context: Encoded radar
-        :param t: timestep
+        :param t: timesteps
         :param noise: Standard Gaussian Noise
         :return: loss
         """
@@ -185,6 +185,11 @@ class BrownianBridgeModel(nn.Module):
     def p_sample(self, x_t, y, context, i, clip_denoised=False):
         """
         Backward diffusion process (one time step).
+
+        x_t: Lidar latent at timestep t
+        y: Original noisy lidar latent
+        context: Radar latent
+        i: Sample step index (during inference time we skip sampling so not all trained timesteps are sampled)
         """
         b, *_, device = *x_t.shape, x_t.device
         if self.steps[i] == 0:
@@ -217,15 +222,15 @@ class BrownianBridgeModel(nn.Module):
             return x_tminus_mean + sigma_t * noise, x0_recon
 
     @torch.no_grad()
-    def p_sample_loop(self, y, context=None, clip_denoised=True, sample_mid_step=False):
+    def p_sample_loop(self, y, context, clip_denoised=True, sample_mid_step=False):
         """
-        Full reverse process.
-        """
-        if self.condition_key == "nocond":
-            context = None
-        else:
-            context = y if context is None else context
+        Full reverse process at inference time (this is what is called when actually 
+        generating a clean lidar image at inference time).
 
+        y: Noisy lidar encoding
+        context: Radar encoding
+        clip_denoised: 
+        """
         if sample_mid_step:
             imgs, one_step_imgs = [y], []
             for i in tqdm(range(len(self.steps)), desc=f'sampling loop time step', total=len(self.steps)):

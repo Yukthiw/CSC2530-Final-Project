@@ -7,7 +7,8 @@ from tqdm.autonotebook import tqdm
 
 from models.BrownianBridge.BrownianBridgeModel import BrownianBridgeModel
 from models.BrownianBridge.base.modules.encoders.modules import SpatialRescaler
-# from model.VQGAN.vqgan import VQModel
+from models.voxelnet import VoxelNet
+
 
 
 def disabled_train(self, mode=True):
@@ -20,8 +21,11 @@ class LatentBrownianBridgeModel(BrownianBridgeModel):
     def __init__(self, model_config):
         super().__init__(model_config)
 
-        # TODO: Init encoders here
-        self.radar_encoder = None
+        # Loading Radar Encoder
+        self.radar_encoder = VoxelNet()
+        encoder_checkpoint = torch.load(model_config.RADAR_ENCODER.checkpoint_path)
+        self.radar_encoder.load_state_dict(encoder_checkpoint['radar_encoder_state_dict'])
+        
         self.lidar_encoder = None
 
     # TODO: Figure out exactly how ema works and whether we want to use it
