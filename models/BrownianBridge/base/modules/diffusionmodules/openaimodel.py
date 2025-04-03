@@ -469,7 +469,7 @@ class UNetModel(nn.Module):
         context_dim=128,                 # custom transformer support
         n_embed=None,                     # custom support for prediction of discrete ids into codebook of first stage vq model
         legacy=True,
-        condition_key="concat",
+        condition_key="cross-attention",
     ):
         super().__init__()
         if use_spatial_transformer:

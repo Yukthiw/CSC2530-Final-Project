@@ -33,6 +33,10 @@ model:
   # model_load_path:  # model checkpoint path
   # optim_sche_load_path:  # optimizer scheduler checkpoint path
 
+  RADAR_ENCODER:
+    checkpoint_path: "/u/yukthiw/files/CSC2530-Final-Project/checkpoints/radar_encoder.pth"
+  LIDAR_ENCODER:
+    checkpoint_path: "..."
   EMA:
     use_ema: True
     ema_decay: 0.995
@@ -56,7 +60,7 @@ model:
     params:
       mt_type: 'linear' # options {'linear', 'sin'}
       objective: 'grad' # options {'grad', 'noise', 'ysubx'}
-      loss_type: 'l1' # options {'l1', 'l2'}
+      loss_type: 'l2' # options {'l1', 'l2'}
 
       skip_sample: True
       sample_type: 'linear' # options {"linear", "sin"}

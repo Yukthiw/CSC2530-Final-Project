@@ -1,10 +1,17 @@
 import os
 import torch
+import yaml
+import sys
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
+from models.BrownianBridge.LatentBrownianBridgeModel import LatentBrownianBridgeModel
 
-def train_bbdm_with_radar_cond(
+def load_config(path):
+    with open(path, 'r') as f:
+        return yaml.safe_load(f)
+    
+def train_cbbdm(
     model,
     train_loader: DataLoader,
     val_loader: DataLoader,
@@ -21,7 +28,12 @@ def train_bbdm_with_radar_cond(
     clip_grad_norm: float = None,
 ):
     step = 0
-    os.makedirs(log_dir, exist_ok=True)
+
+    checkpoint_path = f"{log_dir}/checkpoints/"
+    log_path =  f"{log_dir}/logs/"
+    os.makedirs(checkpoint_path, exist_ok=True)
+    os.makedirs(log_path, exist_ok=True)
+
 
     for epoch in range(n_epochs):
         print(f"Epoch {epoch + 1}/{n_epochs}")
@@ -80,10 +92,54 @@ def train_bbdm_with_radar_cond(
                 if ema_model:
                     ckpt["ema"] = ema_model.state_dict()
 
-                ckpt_path = os.path.join(log_dir, f"ckpt_step_{step}.pth")
+                ckpt_path = os.path.join(checkpoint_path, f"ckpt_step_{step}.pth")
                 torch.save(ckpt, ckpt_path)
                 print(f"Saved checkpoint at step {step}")
 
             if max_steps and step >= max_steps:
                 print("Reached max training steps.")
                 return
+
+
+def main():
+    config_path = sys.argv[1]
+    log_path = sys.argv[2] # TODO: Have better argument handling than this
+    config = load_config(config_path)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    train_dataset = None
+    val_dataset = None
+    train_loader = None
+    val_loader = None
+
+    model = LatentBrownianBridgeModel(config['model']).to(device)
+    ema = None
+    optim_config = config['model']['BB']['optimizer']
+    if optim_config['optimizer'].lower() == 'adam':
+        optimizer = torch.optim.Adam(model.get_parameters(), lr=optim_config['lr'], betas=(optim_config['beta1'], 0.999),
+                                     weight_decay=optim_config['weight_decay'])
+    else:
+        raise NotImplementedError("Only Adam optimizer is supported right now")
+    
+    sched_config = config['model']['BB']['lr_scheduler']
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer,
+                                                           factor=sched_config['factor'],
+                                                           patience=sched_config['patience'],
+                                                           threshold=sched_config['threshold'],
+                                                           cooldown=sched_config['cooldown'],
+                                                           min_lr=sched_config['min_lr'])
+
+    train_cbbdm(
+        model=model,
+        train_loader=train_loader,
+        val_loader=val_loader,
+        optimizer=optimizer,
+        n_epochs=config['training']['n_epochs'],
+        device=device,
+        log_path=f"{log_path}{config['model']['model_name']}",
+        ema_model=ema,
+        scheduler=scheduler,
+        val_interval=config['training']['val_interval'],
+        save_interval=config['training']['save_interval'],
+        max_steps=config['training']['n_steps']
+    )

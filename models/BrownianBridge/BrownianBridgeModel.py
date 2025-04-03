@@ -89,11 +89,7 @@ class BrownianBridgeModel(nn.Module):
     def get_parameters(self):
         return self.denoise_fn.parameters()
 
-    def forward(self, x, y, context=None):
-        if self.condition_key == "nocond":
-            context = None
-        else:
-            context = y if context is None else context
+    def forward(self, x, y, context):
         b, c, h, w, device, img_size, = *x.shape, x.device, self.image_size
         assert h == img_size and w == img_size, f'height and width of image must be {img_size}'
         t = torch.randint(0, self.num_timesteps, (b,), device=device).long()
@@ -102,9 +98,9 @@ class BrownianBridgeModel(nn.Module):
     def p_losses(self, x0, y, context, t, noise=None):
         """
         model loss
-        :param x0: encoded x_ori, E(x_ori) = x0
-        :param y: encoded y_ori, E(y_ori) = y
-        :param y_ori: original source domain image
+        :param x0: encoded x_ori (Clean Lidar)
+        :param y: encoded y_ori (Noisy Lidar)
+        :param context: Encoded radar
         :param t: timestep
         :param noise: Standard Gaussian Noise
         :return: loss
@@ -129,11 +125,15 @@ class BrownianBridgeModel(nn.Module):
         }
         return recloss, log_dict
 
-    def q_sample(self, x0, y, t, noise=None):
+    def q_sample(self, x0, y, t):
         '''
         This is where x_t is calculated for the forward process, we also return the objective
         from here to calculate loss, in traditional DDPM it would just be predicting the noise
         but in BBDM paper they use the "grad" loss function (See Algorithm 1 in https://arxiv.org/pdf/2205.07680).
+
+        x0: Clean lidar gt latent
+        y: Weather perturbed lidar latent
+        t: Timestep
         '''
         noise = default(noise, lambda: torch.randn_like(x0))
         m_t = extract(self.m_t, t, x0.shape)
@@ -142,8 +142,6 @@ class BrownianBridgeModel(nn.Module):
 
         if self.objective == 'grad':
             objective = m_t * (y - x0) + sigma_t * noise
-        elif self.objective == 'noise':
-            objective = noise
         elif self.objective == 'ysubx':
             objective = y - x0
         else:
@@ -171,7 +169,7 @@ class BrownianBridgeModel(nn.Module):
     @torch.no_grad()
     def q_sample_loop(self, x0, y):
         """
-        For x0 (Noise Lidar) and y (Clean Lidar), both of shape BxCxWxH, sample all timesteps
+        For x0 (Clean Lidar) and y (Noisy Lidar), both of shape BxCxWxH, sample all timesteps
         and return list of length num_timesteps of image batches (all would be BxCxWxH). 
         
         This is the full forward diffusson process.
