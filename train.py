@@ -4,8 +4,11 @@ import yaml
 import sys
 from torch.utils.data import DataLoader
 from tqdm import tqdm
+from nuscenes.nuscenes import NuScenes
+
 
 from models.BrownianBridge.LatentBrownianBridgeModel import LatentBrownianBridgeModel
+from utils.nusc_dataloader import NuscData
 
 def load_config(path):
     with open(path, 'r') as f:
@@ -102,15 +105,20 @@ def train_cbbdm(
 
 
 def main():
+    # TODO: Have better argument handling than this
     config_path = sys.argv[1]
-    log_path = sys.argv[2] # TODO: Have better argument handling than this
+    data_path = sys.argv[2]
+    log_path = sys.argv[3] 
     config = load_config(config_path)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    nusc = NuScenes(version='v1.0-mini', dataroot=data_path, verbose=True)
 
-    train_dataset = None
-    val_dataset = None
-    train_loader = None
-    val_loader = None
+    train_dataset =  NuscData(nusc, is_train=True, nsweeps=1)
+    val_dataset =  NuscData(nusc, is_train=False, nsweeps=1)
+    train_loader = DataLoader(train_dataset, batch_size=config['data']['train']['batch_size'],
+                              shuffle=config['data']['train']['shuffle'], num_workers=8, drop_last=True)
+    val_loader = DataLoader(val_dataset, batch_size=config['data']['val']['batch_size'],
+                            shuffle=config['data']['val']['shuffle'], num_workers=8, drop_last=True)
 
     model = LatentBrownianBridgeModel(config['model']).to(device)
     ema = None
