@@ -61,6 +61,12 @@ class NuscData(Dataset):
         ref_sd_rec = self.nusc.get('sample_data', ref_sd_token)
         ref_time = 1e-6 * ref_sd_rec['timestamp']  # in seconds
 
+        # Computing Ego frame -> Lidar frame transform
+        ref_lidar_token = rec['data']['LIDAR_TOP']
+        ref_lidar_rec = self.nusc.get('sample_data', ref_lidar_token)
+        lidar_calib = self.nusc.get('calibrated_sensor', ref_lidar_rec['calibrated_sensor_token'])
+        ego_to_lidar = transform_matrix(lidar_calib['translation'], Quaternion(lidar_calib['rotation']), inverse=True)
+
         for sensor in radar_sensors:
             if sensor not in rec['data']:
                 continue
@@ -85,7 +91,7 @@ class NuscData(Dataset):
                 radar_calib = self.nusc.get('calibrated_sensor', current_sd_rec['calibrated_sensor_token'])
                 radar_to_ego = transform_matrix(radar_calib['translation'], Quaternion(radar_calib['rotation']))
                 radar_pc_hom = np.vstack((radar_pc.points[:3, :], np.ones((1, radar_pc.nbr_points()))))
-                radar_pc_ego = (radar_to_ego @ radar_pc_hom)[:3, :]
+                radar_pc_lidar_frame = (ego_to_lidar @ radar_to_ego @ radar_pc_hom)[:3, :] # Probably a smarter way of doing this but whatever
 
                 radar_metadata = radar_pc.points[3:, :]
 
@@ -95,7 +101,7 @@ class NuscData(Dataset):
                 times = time_lag * np.ones((1, radar_pc.nbr_points()))
 
                 # Combine everything to (19, N)
-                new_radar_points = np.vstack((radar_pc_ego, radar_metadata, times))
+                new_radar_points = np.vstack((radar_pc_lidar_frame, radar_metadata, times))
                 all_radar_points.append(new_radar_points)
 
                 if current_sd_rec['prev'] == '':
@@ -112,28 +118,18 @@ class NuscData(Dataset):
 
     def get_lidar_data(self, rec):
         """
-        Loads the LiDAR point cloud and transforms it to the ego-vehicle frame.
+        Loads the LiDAR point cloud and returns the data IN LIDAR FRAME.
         Args:
             rec: NuScenes sample record.
         Returns:
-            torch.Tensor: Transformed LiDAR point cloud (shape: `[M, 3]`).
+            torch.Tensor: Transformed LiDAR point cloud (shape: `[M, 5]`).
         """
         # Load LiDAR point cloud 
         lidar_sample_data = self.nusc.get('sample_data', rec['data']['LIDAR_TOP'])
         lidar_path = os.path.join(self.dataroot, lidar_sample_data['filename'])
-        lidar_pc = np.fromfile(lidar_path, dtype=np.float32).reshape(-1, 5)[:, :3]  # Only take XYZ
+        lidar_pc = np.fromfile(lidar_path, dtype=np.float32).reshape(-1, 5) # Shape [M, 5]
 
-        # Get LiDAR → Ego transformation matrix
-        lidar_calib = self.nusc.get('calibrated_sensor', lidar_sample_data['calibrated_sensor_token'])
-        lidar_to_ego = transform_matrix(lidar_calib['translation'], Quaternion(lidar_calib['rotation']))
-
-        # Convert to homogeneous coordinates (4D)
-        lidar_pc_hom = np.hstack((lidar_pc, np.ones((lidar_pc.shape[0], 1))))  # Shape: [M, 4]
-
-        # Apply LiDAR → Ego transformation
-        lidar_pc_ego = (lidar_to_ego @ lidar_pc_hom.T)[:3, :].T  # Shape: [M, 3]
-
-        return torch.Tensor(lidar_pc_ego)
+        return torch.Tensor(lidar_pc)
 
     def __getitem__(self, index):
             """
