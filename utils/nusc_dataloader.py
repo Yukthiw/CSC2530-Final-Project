@@ -8,6 +8,8 @@ from nuscenes.utils.data_classes import RadarPointCloud
 from nuscenes.utils.geometry_utils import transform_matrix
 from nuscenes.utils.splits import create_splits_scenes
 
+from utils.radar_encoder_utils import Vox_util
+
 class NuscData(Dataset):
     def __init__(self, nusc, is_train: bool, nsweeps: int = 1,
                  use_radar_filters: bool = True, custom_dataroot: str = None):
@@ -30,6 +32,24 @@ class NuscData(Dataset):
 
         self.scenes = self.get_scenes()
         self.ixes = self.prepro()
+        self.voxelizer = self.init_vox()
+    
+    def init_vox(self):
+        scene_centroid_x = 0.0
+        scene_centroid_y = 1.0
+        scene_centroid_z = 0.0
+
+        scene_centroid_py = np.array([scene_centroid_x,
+                                    scene_centroid_y,
+                                    scene_centroid_z]).reshape([1, 3])
+        scene_centroid = torch.from_numpy(scene_centroid_py).float()
+
+        XMIN, XMAX = -50, 50
+        ZMIN, ZMAX = -50, 50
+        YMIN, YMAX = -5, 5
+        bounds = (XMIN, XMAX, YMIN, YMAX, ZMIN, ZMAX)
+        Z, Y, X = 200, 8, 200
+        return Vox_util(Z, Y, X, scene_centroid, bounds)
 
     def get_scenes(self):
         """
@@ -161,8 +181,11 @@ class NuscData(Dataset):
                 radar_data = torch.cat([radar_pc, pad_tensor], dim=0)
             else: 
                 radar_data = radar_pc
+            
+            radar_vox = self.voxelizer.voxelize(radar_data.unsqueeze(0))
             return {
-                'radar': radar_data,  # Shape: (700*nsweeps, 19)
+                'radar_pc': radar_data,  # Shape: (700*nsweeps, 19)
+                'radar_vox': radar_vox, # Tuple (3, )
                 'lidar': lidar_pc   # Shape: (M, 3)
             }
 
