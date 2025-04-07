@@ -1,3 +1,6 @@
+# snowfall npy files required for augmentation:
+utils/weather_augmentation/npy/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
