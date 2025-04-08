@@ -9,6 +9,7 @@ from nuscenes.utils.geometry_utils import transform_matrix
 from nuscenes.utils.splits import create_splits_scenes
 
 from utils.radar_encoder_utils import Vox_util
+from utils.lidar_encoder_utils import Lidar_to_range_image
 
 class NuscData(Dataset):
     def __init__(self, nusc, is_train: bool, nsweeps: int = 1,
@@ -33,6 +34,7 @@ class NuscData(Dataset):
         self.scenes = self.get_scenes()
         self.ixes = self.prepro()
         self.voxelizer = self.init_vox()
+        self.range_img = Lidar_to_range_image()
     
     def init_vox(self):
         scene_centroid_x = 0.0
@@ -183,10 +185,12 @@ class NuscData(Dataset):
                 radar_data = radar_pc
             
             radar_vox = self.voxelizer.voxelize(radar_data.unsqueeze(0))
+            lidar_range = self.range_img(lidar_pc)
             return {
                 'radar_pc': radar_data,  # Shape: (700*nsweeps, 19)
                 'radar_vox': radar_vox, # Tuple (3, )
-                'lidar': lidar_pc   # Shape: (M, 3)
+                'lidar': lidar_pc,   # Shape: (M, 3)
+                'lidar_range': lidar_range
             }
 
     def __len__(self):
