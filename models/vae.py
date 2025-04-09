@@ -3,8 +3,8 @@ import torch
 import safetensors
 from replace_models import replace_attn, replace_conv, replace_down
 
-class VAE():
-    def __init___(self, vae_config, vae_checkpoint, device):
+class Lidar_VAE():
+    def __init__(self, vae_config, vae_checkpoint, device):
         config = AutoencoderKL.load_config(vae_config)
         vae = AutoencoderKL.from_config(config)
         vae_checkpoint = safetensors.torch.load_file(vae_checkpoint)
