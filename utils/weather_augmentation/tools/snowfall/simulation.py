@@ -327,7 +327,8 @@ def get_occlusions(beam_angles: np.ndarray, ranges_orig: np.ndarray, root_path: 
     if root_path:
         path = Path(root_path) / 'training' / 'snowflakes' / 'npy' / particle_file
     else:
-        path = Path(__file__).parent.parent.parent.absolute() / 'npy' / particle_file
+        # path = Path(__file__).parent.parent.parent.absolute() / 'npy' / particle_file
+        path = Path(__file__).parent.parent.parent.absolute() / particle_file
 
     all_particles = np.load(str(path))
     x, y, _ = all_particles[:, 0], all_particles[:, 1], all_particles[:, 2]

@@ -75,6 +75,9 @@ class AugmentPointCloud:
             filename: the file path of the pointcloud to augment
             savepath: the path to save the file, if None, then it returns the point cloud instead of saving it. 
         '''
+
+        # print(f"source: {filename}\ndestination: {savepath} \n\n")
+
         # load the pointcloud
         pc = self.load_pointcloud(filename)
 
@@ -97,8 +100,10 @@ class AugmentPointCloud:
         occupancy = compute_occupancy(float(self.snowfall_rate), float(self.terminal_velocity))
 
         # TODO make this more modular
-        # snowflake_file_prefix = f'snowflake_patterns/npy/{self.mode}_{rain_rate}_{occupancy}'
-        snowflake_file_prefix = f'{self.mode}_{rain_rate}_{occupancy}'
+        snowflake_file_prefix = f'snowflake_patterns/npy/{self.mode}_{rain_rate}_{occupancy}'
+        # snowflake_file_prefix = f'{self.mode}_{rain_rate}_{occupancy}'
+
+        # print("snowflake_file_prefix: ", snowflake_file_prefix)
 
         # np.save('original_pointcloud.npy', pc)
 
@@ -107,16 +112,16 @@ class AugmentPointCloud:
                                         beam_divergence=float(np.degrees(self.beam_divergence)),
                                         shuffle=True, show_progressbar=True)
 
-        num_attenuated, num_removed, avg_intensity_diff = stats
+        # num_attenuated, num_removed, avg_intensity_diff = stats
 
-        num_unchanged = (pc[:, 4] == 0).sum()
-        num_scattered = (pc[:, 4] == 2).sum()
+        # num_unchanged = (pc[:, 4] == 0).sum()
+        # num_scattered = (pc[:, 4] == 2).sum()
 
-        print(f"num_unchanged: {num_unchanged}")
-        print(f"num_scattered: {num_scattered}")
-        print(f"num_attenuated: {num_attenuated}")
-        print(f"num_removed: {num_removed}")
-        print(f"avg_intensity_diff: {avg_intensity_diff}")
+        # print(f"num_unchanged: {num_unchanged}")
+        # print(f"num_scattered: {num_scattered}")
+        # print(f"num_attenuated: {num_attenuated}")
+        # print(f"num_removed: {num_removed}")
+        # print(f"avg_intensity_diff: {avg_intensity_diff}")
 
         if savepath == None:
             return pc
