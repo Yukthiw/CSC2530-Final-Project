@@ -8,7 +8,7 @@ from tqdm.autonotebook import tqdm
 from models.BrownianBridge.BrownianBridgeModel import BrownianBridgeModel
 from models.BrownianBridge.base.modules.encoders.modules import SpatialRescaler
 from models.voxelnet import VoxelNet
-
+from models.vae import Lidar_VAE
 
 
 def disabled_train(self, mode=True):
@@ -18,15 +18,17 @@ def disabled_train(self, mode=True):
 
 
 class LatentBrownianBridgeModel(BrownianBridgeModel):
-    def __init__(self, model_config):
+    def __init__(self, model_config, device):
         super().__init__(model_config)
 
         # Loading Radar Encoder
         self.radar_encoder = VoxelNet()
         encoder_checkpoint = torch.load(model_config.RADAR_ENCODER.checkpoint_path)
         self.radar_encoder.load_state_dict(encoder_checkpoint['radar_encoder_state_dict'])
-        
-        self.lidar_encoder = None
+
+        self.lidar_encoder = Lidar_VAE(model_config.LIDAR_ENCODER.config_path, 
+                                       model_config.LIDAR_ENCODER.checkpoint_path,
+                                       device)
 
     # TODO: Figure out exactly how ema works and whether we want to use it
     def get_ema_net(self):
@@ -43,62 +45,41 @@ class LatentBrownianBridgeModel(BrownianBridgeModel):
             self.cond_stage_model.apply(weights_init)
         return self
 
-    def forward(self, x_noisy, x_clean, x_radar):
+    def forward(self, x_noisy, x_clean, context):
         with torch.no_grad():
-            x_latent = self.encode_lidar(x_noisy)
-            x_cond_latent = self.encode_lidar(x_clean)
-            x_radar_latent = self.encode_radar(x_radar)
+            x_noisy_latent = self.encode_lidar(x_noisy)
+            x_clean_latent = self.encode_lidar(x_clean)
+            x_radar_latent = self.encode_radar(context)
 
-        return super().forward(x_latent.detach(), x_cond_latent.detach(), x_radar_latent.detach())
-
-    # Don't think we need this?
-    # def get_cond_stage_context(self, radar_vox):
-    #     with torch.no_grad():
-    #         context = self.encode_rader(radar_vox)
-    #     return context
+        return super().forward(x_clean_latent.detach(), x_noisy_latent.detach(), x_radar_latent.detach())
 
     @torch.no_grad()
     def encode_lidar(self, x, normalize=None):
         # normalize = self.model_config.normalize_latent if normalize is None else normalize
         model = self.lidar_encoder
-        x_latent = model.encoder(x)
-
-        # TODO: Figure out if we want to normalize latents?
-        # if not self.model_config.latent_before_quant_conv:
-        #     x_latent = model.quant_conv(x_latent)
-        # if normalize:
-        #     if cond:
-        #         x_latent = (x_latent - self.cond_latent_mean) / self.cond_latent_std
-        #     else:
-        #         x_latent = (x_latent - self.ori_latent_mean) / self.ori_latent_std
+        x_latent = model.encode_range_image(x)
         return x_latent
 
     @torch.no_grad()
-    def decode_lidar(self, x_latent, normalize=None):
-        # TODO: Figure out if we want to normalize latents?
-        # normalize = self.model_config.normalize_latent if normalize is None else normalize
-        # if normalize:
-        #     if cond:
-        #         x_latent = x_latent * self.cond_latent_std + self.cond_latent_mean
-        #     else:
-        #         x_latent = x_latent * self.ori_latent_std + self.ori_latent_mean
+    def decode_lidar(self, x_latent):
         model = self.lidar_encoder
-        out = model.decode(x_latent)
+        out = model.decode_range_image(x_latent)
         return out
     
     @torch.no_grad()
     def encode_radar(self, x):
         model = self.radar_encoder
         # Radar data is a tuple which is unpacked and passed to encoder
-        cond_latent = model.encoder(*x)
+        cond_latent = model(*x)
         return cond_latent
 
     @torch.no_grad()
-    def sample(self, x_cond, clip_denoised=False, sample_mid_step=False):
-        x_cond_latent = self.encode_lidar(x_cond, cond=True)
+    def sample(self, x_cond, x_radar, clip_denoised=False, sample_mid_step=False):
+        x_cond_latent = self.encode_lidar(x_cond)
+        x_radar_latent = self.encode_radar(x_radar)
         if sample_mid_step:
             temp, one_step_temp = self.p_sample_loop(y=x_cond_latent,
-                                                     context=self.get_cond_stage_context(x_cond),
+                                                     context=x_radar_latent,
                                                      clip_denoised=clip_denoised,
                                                      sample_mid_step=sample_mid_step)
             out_samples = []
@@ -117,10 +98,10 @@ class LatentBrownianBridgeModel(BrownianBridgeModel):
                 one_step_samples.append(out.to('cpu'))
             return out_samples, one_step_samples
         else:
-            temp = self.p_sample_loop(y=x_cond_latent,
-                                      context=self.get_cond_stage_context(x_cond),
+            temp = self.p_sample_loop(y=x_cond_latent.detach(),
+                                      context=x_radar_latent.detach(),
                                       clip_denoised=clip_denoised,
                                       sample_mid_step=sample_mid_step)
             x_latent = temp
-            out = self.decode_lidar(x_latent, cond=False)
+            out = self.decode_lidar(x_latent)
             return out

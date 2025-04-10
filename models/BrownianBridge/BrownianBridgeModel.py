@@ -90,8 +90,8 @@ class BrownianBridgeModel(nn.Module):
         return self.denoise_fn.parameters()
 
     def forward(self, x, y, context):
-        b, c, h, w, device, img_size, = *x.shape, x.device, self.image_size
-        assert h == img_size and w == img_size, f'height and width of image must be {img_size}'
+        b, c, h, w, device, img_size_h, img_size_w, = *x.shape, x.device, *self.image_size
+        assert h == img_size_h and w == img_size_w, f'height and width of image must be {self.image_size}'
         t = torch.randint(0, self.num_timesteps, (b,), device=device).long()
         return self.p_losses(x, y, context, t)
 
@@ -107,7 +107,6 @@ class BrownianBridgeModel(nn.Module):
         """
         b, c, h, w = x0.shape
         noise = default(noise, lambda: torch.randn_like(x0))
-
         x_t, objective = self.q_sample(x0, y, t, noise)
         objective_recon = self.denoise_fn(x_t, timesteps=t, context=context)
 
@@ -125,7 +124,7 @@ class BrownianBridgeModel(nn.Module):
         }
         return recloss, log_dict
 
-    def q_sample(self, x0, y, t):
+    def q_sample(self, x0, y, t, noise):
         '''
         This is where x_t is calculated for the forward process, we also return the objective
         from here to calculate loss, in traditional DDPM it would just be predicting the noise

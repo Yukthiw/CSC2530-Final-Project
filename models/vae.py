@@ -1,7 +1,7 @@
 from diffusers.models import AutoencoderKL
 import torch
 import safetensors
-from replace_models import replace_attn, replace_conv, replace_down
+from models.replace_models import replace_attn, replace_conv, replace_down
 
 class Lidar_VAE():
     def __init__(self, vae_config, vae_checkpoint, device):
@@ -38,7 +38,7 @@ class Lidar_VAE():
         if output_type == "torch":
             return image
         elif output_type == "pil":
+            # TODO: Need to fix this if we intend on using it
             image = (image / 2 + 0.5).clamp(0, 1)
             image = image.cpu().permute(0, 2, 3, 1).numpy()
             image = self.numpy_to_pil(image)
-            

@@ -484,7 +484,7 @@ class UNetModel(nn.Module):
         if num_head_channels == -1:
             assert num_heads != -1, 'Either num_heads or num_head_channels has to be set'
 
-        self.image_size = image_size
+        self.image_size = min(image_size) # Take the smallest latent feature dimension
         self.in_channels = in_channels
         self.model_channels = model_channels
         self.out_channels = out_channels
@@ -538,7 +538,6 @@ class UNetModel(nn.Module):
                     )
                 ]
                 ch = mult * model_channels
-                # We only do cross-attention at very compressed resolutions
                 if ds in attention_resolutions:
                     if num_head_channels == -1:
                         dim_head = ch // num_heads
@@ -737,8 +736,8 @@ class UNetModel(nn.Module):
             assert y.shape == (x.shape[0],)
             emb = emb + self.label_emb(y)
 
-        # NOTE: This seems to be incorrect in the original BBDM code so I've commented it out, 
-        # it doesn't make sense to concatenate context (radar latent) with x if we're already passing the context separately for cross attention
+        # NOTE: Some implementations concatenate conditioning as well as performing cross-attention but due to mismatched dimensions
+        # better to not.
 
         # if self.condition_key != 'nocond':
         #     x = th.cat([x, context], dim=1)
