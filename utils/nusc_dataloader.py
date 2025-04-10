@@ -166,7 +166,7 @@ class NuscData(Dataset):
             return torch.Tensor(lidar_pc)
         else:
             raise FileExistsError(f"{aug_path} does not exist.")
-
+            
     def trim_pad_pc(self, pc: torch.Tensor, target_size: int):
         # Trimming/Padding radar points
         num_points = pc.shape[0]
