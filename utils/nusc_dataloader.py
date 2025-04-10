@@ -12,24 +12,24 @@ from utils.radar_encoder_utils import Vox_util
 from utils.lidar_encoder_utils import Lidar_to_range_image
 
 class NuscData(Dataset):
-    def __init__(self, nusc, is_train: bool, nsweeps: int = 1,
-                 use_radar_filters: bool = True, custom_dataroot: str = None):
+    def __init__(self, nusc, noisy_lidar_dataroot: str, is_train: bool, nsweeps: int = 1,
+                 use_radar_filters: bool = True):
         """
         Dataset for loading NuScenes radar + LiDAR data.
         
         Args:
             nusc: NuScenes dataset instance.
+            noisy_lidar_dataroot (str): Path to augmented lidar files.
             is_train (bool): Whether to load training or validation data.
-            data_aug_conf (dict): Data augmentation configuration.
             nsweeps (int): Number of past radar sweeps to aggregate.
             use_radar_filters (bool): Apply NuScenes' default radar filtering.
-            custom_dataroot (str): Optional custom dataset root.
         """
         self.nusc = nusc
         self.is_train = is_train
         self.nsweeps = nsweeps
         self.use_radar_filters = use_radar_filters
-        self.dataroot = self.nusc.dataroot if custom_dataroot is None else custom_dataroot
+        self.dataroot = self.nusc.dataroot
+        self.augmented_pc_dataroot = noisy_lidar_dataroot
 
         self.scenes = self.get_scenes()
         self.ixes = self.prepro()
@@ -138,7 +138,7 @@ class NuscData(Dataset):
 
         return torch.Tensor(radar_points_merged.T)  # (N_total, 19)
 
-    def get_lidar_data(self, rec):
+    def get_gt_lidar_data(self, rec):
         """
         Loads the LiDAR point cloud and returns the data IN LIDAR FRAME.
         Args:
@@ -152,7 +152,21 @@ class NuscData(Dataset):
         lidar_pc = np.fromfile(lidar_path, dtype=np.float32).reshape(-1, 5) # Shape [M, 5]
 
         return torch.Tensor(lidar_pc)
-    
+
+    def get_perturbed_lidar_data(self, rec):
+        """
+        Loads augmented LiDAR point cloud matching ground truth.
+        """
+        lidar_sample_data = self.nusc.get('sample_data', rec['data']['LIDAR_TOP'])
+        original_path = os.path.join(self.dataroot, lidar_sample_data['filename'])
+        base_filename = os.path.splitext(os.path.splitext(os.path.basename(original_path))[0])[0] # Lidar pc filenames are <file_name>.pcd.bin
+        aug_path = os.path.join(self.augmented_pc_dataroot, base_filename + '.npy')
+        if os.path.exists(aug_path):
+            lidar_pc = np.load(aug_path)  # Shape [M, 5]
+            return torch.Tensor(lidar_pc)
+        else:
+            raise FileExistsError(f"{aug_path} does not exist.")
+            
     def trim_pad_pc(self, pc: torch.Tensor, target_size: int):
         # Trimming/Padding radar points
         num_points = pc.shape[0]
@@ -184,25 +198,28 @@ class NuscData(Dataset):
             """
             rec = self.ixes[index]
             radar_pc = self.get_radar_data(rec, nsweeps=self.nsweeps, min_distance=2.2)
-            lidar_pc = self.get_lidar_data(rec)
-            
+            gt_lidar_pc = self.get_gt_lidar_data(rec)
+            noisy_lidar_pc = self.get_perturbed_lidar_data(rec)
 
-            # Trimming/Padding radar points
+            # Trimming/Padding radar points + Voxelizing (Need to be fixed dimension for voxel util)
             RADAR_SIZE = 700 * self.nsweeps
             radar_data = self.trim_pad_pc(radar_pc, RADAR_SIZE)
+            radar_vox = self.voxelizer.voxelize(radar_data.unsqueeze(0))
+
+            gt_lidar_range = self.range_img(gt_lidar_pc)
+            noisy_lidar_range = self.range_img(noisy_lidar_pc)
 
             # Trimming/Padding lidar points
             LIDAR_SIZE = 35000
-            lidar_data = self.trim_pad_pc(lidar_pc, LIDAR_SIZE)
-            
-            
-            radar_vox = self.voxelizer.voxelize(radar_data.unsqueeze(0))
-            lidar_range = self.range_img(lidar_data)
+            gt_lidar_data = self.trim_pad_pc(gt_lidar_pc, LIDAR_SIZE)
+            noisy_lidar_data = self.trim_pad_pc(noisy_lidar_pc, LIDAR_SIZE)
             return {
                 'radar_pc': radar_data,  # Shape: (700, 19)
                 'radar_vox': radar_vox, # Tuple (3, )
-                'lidar': lidar_data,   # Shape: (M, 3)
-                'lidar_range': lidar_range # Shape: (2, 1024, 32)
+                'clean_lidar_pc': gt_lidar_data,   # Shape: (35000, 3)
+                'clean_lidar_range': gt_lidar_range, # Shape: (2, 1024, 32)
+                'noisy_lidar_pc': noisy_lidar_data,   # Shape: (35000, 3)
+                'noisy_lidar_range': noisy_lidar_range, # Shape: (2, 1024, 32)
             }
 
     def __len__(self):
