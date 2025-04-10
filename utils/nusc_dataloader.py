@@ -9,6 +9,7 @@ from nuscenes.utils.geometry_utils import transform_matrix
 from nuscenes.utils.splits import create_splits_scenes
 
 from utils.radar_encoder_utils import Vox_util
+from utils.lidar_encoder_utils import Lidar_to_range_image
 
 class NuscData(Dataset):
     def __init__(self, nusc, is_train: bool, nsweeps: int = 1,
@@ -33,6 +34,7 @@ class NuscData(Dataset):
         self.scenes = self.get_scenes()
         self.ixes = self.prepro()
         self.voxelizer = self.init_vox()
+        self.range_img = Lidar_to_range_image()
     
     def init_vox(self):
         scene_centroid_x = 0.0
@@ -150,7 +152,26 @@ class NuscData(Dataset):
         lidar_pc = np.fromfile(lidar_path, dtype=np.float32).reshape(-1, 5) # Shape [M, 5]
 
         return torch.Tensor(lidar_pc)
+    
+    def trim_pad_pc(self, pc: torch.Tensor, target_size: int):
+        # Trimming/Padding radar points
+        num_points = pc.shape[0]
 
+        if num_points > target_size:
+            # Trim excess points (randomly)
+            idx = torch.randperm(num_points)[:target_size]  # Random subset
+            radar_data = pc[idx]
+
+        elif num_points < target_size:
+            # Pad with zeros if fewer points exist
+            pad_needed = target_size - num_points
+            pad_tensor = torch.zeros((pad_needed, pc.shape[1]), dtype=pc.dtype)
+            radar_data = torch.cat([pc, pad_tensor], dim=0)
+        else: 
+            radar_data = pc
+        
+        return radar_data
+            
     def __getitem__(self, index):
             """
             Retrieves a sample, loading radar and LiDAR data.
@@ -165,28 +186,23 @@ class NuscData(Dataset):
             radar_pc = self.get_radar_data(rec, nsweeps=self.nsweeps, min_distance=2.2)
             lidar_pc = self.get_lidar_data(rec)
             
+
             # Trimming/Padding radar points
-            V = 700 * self.nsweeps
-            num_points = radar_pc.shape[0]
+            RADAR_SIZE = 700 * self.nsweeps
+            radar_data = self.trim_pad_pc(radar_pc, RADAR_SIZE)
 
-            if num_points > V:
-                # Trim excess points (randomly)
-                idx = torch.randperm(num_points)[:V]  # Random subset
-                radar_data = radar_pc[idx]
-
-            elif num_points < V:
-                # Pad with zeros if fewer points exist
-                pad_needed = V - num_points
-                pad_tensor = torch.zeros((pad_needed, radar_pc.shape[1]), dtype=radar_pc.dtype)
-                radar_data = torch.cat([radar_pc, pad_tensor], dim=0)
-            else: 
-                radar_data = radar_pc
+            # Trimming/Padding lidar points
+            LIDAR_SIZE = 35000
+            lidar_data = self.trim_pad_pc(lidar_pc, LIDAR_SIZE)
+            
             
             radar_vox = self.voxelizer.voxelize(radar_data.unsqueeze(0))
+            lidar_range = self.range_img(lidar_data)
             return {
-                'radar_pc': radar_data,  # Shape: (700*nsweeps, 19)
+                'radar_pc': radar_data,  # Shape: (700, 19)
                 'radar_vox': radar_vox, # Tuple (3, )
-                'lidar': lidar_pc   # Shape: (M, 3)
+                'lidar': lidar_data,   # Shape: (M, 3)
+                'lidar_range': lidar_range # Shape: (2, 1024, 32)
             }
 
     def __len__(self):
