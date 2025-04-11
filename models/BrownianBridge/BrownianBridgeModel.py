@@ -7,6 +7,7 @@ from functools import partial
 from tqdm.autonotebook import tqdm
 import numpy as np
 
+from models.BrownianBridge.base.modules.diffusionmodules.unet_v2 import UNetModelV2
 from utils.bb_utils import extract, default
 from models.BrownianBridge.base.modules.diffusionmodules.openaimodel import UNetModel
 from models.BrownianBridge.base.modules.encoders.modules import SpatialRescaler
@@ -38,7 +39,7 @@ class BrownianBridgeModel(nn.Module):
         self.channels = model_params.UNetParams.in_channels
         self.condition_key = model_params.UNetParams.condition_key
 
-        self.denoise_fn = UNetModel(**vars(model_params.UNetParams))
+        self.denoise_fn = UNetModel(**vars(model_params.UNetParams)) if not model_params.UNetParams.context_downsample_size else UNetModelV2(**vars(model_params.UNetParams))
 
     def register_schedule(self):
         '''
@@ -232,7 +233,7 @@ class BrownianBridgeModel(nn.Module):
         """
         if sample_mid_step:
             imgs, one_step_imgs = [y], []
-            for i in tqdm(range(len(self.steps)), desc=f'sampling loop time step', total=len(self.steps)):
+            for i in tqdm(self.steps, desc=f'sampling loop time step', total=len(self.steps)):
                 img, x0_recon = self.p_sample(x_t=imgs[-1], y=y, context=context, i=i, clip_denoised=clip_denoised)
                 imgs.append(img)
                 one_step_imgs.append(x0_recon)

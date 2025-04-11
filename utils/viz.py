@@ -33,7 +33,7 @@ def visualize_radar_lidar_bev(radar_pc, lidar_pc, save_path=None):
     else:
         plt.show()
 
-def visualize_pc_bev(pc, save_path=None):
+def visualize_pc_bev(pc, type="torch", save_path=None):
     """
     Visualizes the Bird's Eye View (BEV) of merged radar & LiDAR point clouds.
 
@@ -41,7 +41,11 @@ def visualize_pc_bev(pc, save_path=None):
         pc (torch.Tensor): Point cloud (shape: [M, D]).
         save_path (str, optional): If provided, saves the figure instead of displaying.
     """
-    points = pc[:, :3].cpu().numpy()  # Extract (x, y, z)
+
+    points = pc[:, :3]  # Extract (x, y, z)
+
+    if type == "torch":
+        points = points.cpu().numpy()
     fig, ax = plt.subplots(figsize=(8, 8))
 
     # Plot LiDAR points (black dots)

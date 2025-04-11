@@ -1,0 +1,88 @@
+
+# Latent Brownian Bridge Diffusion Model Template(Latent Space)
+training:
+  n_epochs: 50
+  n_steps: 200000
+  save_interval: 20000
+  val_interval: 500
+data:
+  clean_data_path: "/w/247/yukthiw/nuscenes_data/nuscenes/"
+  noisy_data_path: "/w/246/willdormer/projects/CompImaging/augmented_pointclouds/samples/LIDAR_TOP/"
+  train:
+    batch_size: 4
+    shuffle: True
+  val:
+    batch_size: 8
+    shuffle: True
+  test:
+    batch_size: 4
+    # shuffle: False
+
+model:
+  model_name: "C-LBBDM-1CA" # part of result path
+  model_type: "C-LBBDM" # specify a module
+  normalize_latent: False
+  only_load_latent_mean_std: False
+
+  # model_load_path:  # model checkpoint path
+  # optim_sche_load_path:  # optimizer scheduler checkpoint path
+
+  RADAR_ENCODER:
+    checkpoint_path: "/u/yukthiw/files/CSC2530-Final-Project/checkpoints/radar_encoder.pth"
+  LIDAR_ENCODER:
+    checkpoint_path: "/w/331/abarroso/vae_model/nuscenes/vae/diffusion_pytorch_model.safetensors"
+    config_path: "/w/331/abarroso/vae_model/nuscenes/vae/config.json"
+  EMA:
+    use_ema: False
+    ema_decay: 0.995
+    update_ema_interval: 8 # step
+    start_ema_step: 30000
+
+  BB:
+    optimizer:
+      weight_decay: 0.000
+      optimizer: 'Adam'
+      lr: 1.e-4
+      beta1: 0.9
+
+    lr_scheduler:
+      factor: 0.5
+      patience: 3000
+      threshold: 0.0001
+      cooldown: 3000
+      min_lr: 5.e-7
+
+    params:
+      mt_type: 'linear' # options {'linear', 'sin'}
+      objective: 'grad' # options {'grad', 'noise', 'ysubx'}
+      loss_type: 'l1' # options {'l1', 'l2'}
+
+      skip_sample: True
+      sample_type: 'linear' # options {"linear", "sin"}
+      sample_step: 200
+
+      num_timesteps: 1000 # timesteps
+      eta: 1.0 # DDIM reverse process eta
+      max_var: 1.0 # maximum variance
+
+      UNetParams:
+        image_size: [256, 8]
+        in_channels: 4
+        model_channels: 128
+        out_channels: 4
+        num_res_blocks: 2
+        attention_resolutions: [4]
+        channel_mult: [1, 4, 8]
+        conv_resample: True
+        dims: 2
+        num_heads: 8
+        context_dim: 128
+        context_downsample_size: [48, 48]
+        compressed_dim: 32
+        # num_ad_channels: 64
+        use_fp16: False
+        use_checkpoint: True
+        use_scale_shift_norm: True
+        resblock_updown: True
+        use_spatial_transformer: True
+        condition_key: "VoxelNet" # options {"VoxelNet", "first_stage", "nocond"}
