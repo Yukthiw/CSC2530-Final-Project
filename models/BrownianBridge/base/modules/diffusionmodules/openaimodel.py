@@ -19,6 +19,7 @@ from models.BrownianBridge.base.modules.diffusionmodules.util import (
     timestep_embedding,
 )
 from models.BrownianBridge.base.modules.attention import SpatialTransformer
+from torch.utils.checkpoint import checkpoint as pt_checkpoint
 
 
 # dummy replace
@@ -28,7 +29,13 @@ def convert_module_to_f16(x):
 def convert_module_to_f32(x):
     pass
 
-
+def convert_norm_layers_to_fp32(module):
+    for name, child in module.named_children():
+        if isinstance(child, (nn.GroupNorm, nn.LayerNorm, nn.BatchNorm1d, nn.BatchNorm2d, nn.BatchNorm3d)):
+            wrapped = NormToFloat32(child)
+            setattr(module, name, wrapped)
+        else:
+            convert_norm_layers_to_fp32(child)
 ## go
 class AttentionPool2d(nn.Module):
     """
@@ -250,10 +257,7 @@ class ResBlock(TimestepBlock):
         :param emb: an [N x emb_channels] Tensor of timestep embeddings.
         :return: an [N x C x ...] Tensor of outputs.
         """
-        return checkpoint(
-            self._forward, (x, emb), self.parameters(), self.use_checkpoint
-        )
-
+        return pt_checkpoint(self._forward, x, emb)  # pytorch
 
     def _forward(self, x, emb):
         if self.updown:
@@ -315,8 +319,8 @@ class AttentionBlock(nn.Module):
         self.proj_out = zero_module(conv_nd(1, channels, channels, 1))
 
     def forward(self, x):
-        return checkpoint(self._forward, (x,), self.parameters(), True)   # TODO: check checkpoint usage, is True # TODO: fix the .half call!!!
-        #return pt_checkpoint(self._forward, x)  # pytorch
+        # return checkpoint(self._forward, (x,), self.parameters(), True)   # TODO: check checkpoint usage, is True # TODO: fix the .half call!!!
+        return pt_checkpoint(self._forward, x)  # pytorch
 
     def _forward(self, x):
         b, c, *spatial = x.shape
@@ -412,7 +416,23 @@ class QKVAttention(nn.Module):
     def count_flops(model, _x, y):
         return count_flops_attn(model, _x, y)
 
+# Keep Norm layers in f32 for numerical stability
+class NormToFloat32(nn.Module):
+    def __init__(self, norm_layer):
+        super().__init__()
+        self.norm = norm_layer
 
+        # Convert all parameters to float32
+        self.norm.float()
+
+        # Convert all buffers (like running_mean/var) to float32
+        for name, buf in self.norm.named_buffers(recurse=False):
+            if isinstance(buf, th.Tensor):
+                self.norm.register_buffer(name, buf.float())
+
+    def forward(self, x):
+        return self.norm(x.float()).to(x.dtype)
+    
 class UNetModel(nn.Module):
     """
     The full UNet model with attention and timestep embedding.
@@ -730,7 +750,8 @@ class UNetModel(nn.Module):
         ), "must specify y if and only if the model is class-conditional"
         hs = []
         t_emb = timestep_embedding(timesteps, self.model_channels, repeat_only=False)
-        emb = self.time_embed(t_emb)
+
+        emb = self.time_embed(t_emb.type(self.dtype))
 
         if self.num_classes is not None:
             assert y.shape == (x.shape[0],)

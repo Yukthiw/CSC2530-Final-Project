@@ -6,13 +6,13 @@ training:
   save_interval: 20000
   val_interval: 500
 data:
-  clean_data_path: "/w/247/yukthiw/nuscenes_data/nuscenes"
+  clean_data_path: "/w/247/yukthiw/nuscenes_data/nuscenes/"
   noisy_data_path: "/w/246/willdormer/projects/CompImaging/augmented_pointclouds/samples/LIDAR_TOP/"
   train:
-    batch_size: 4
+    batch_size: 2
     shuffle: True
   val:
-    batch_size: 4
+    batch_size: 2
     shuffle: True
   test:
     batch_size: 4
@@ -23,6 +23,8 @@ model:
   model_type: "C-LBBDM" # specify a module
   normalize_latent: False
   only_load_latent_mean_std: False
+  use_half_precision: True
+
   # model_load_path:  # model checkpoint path
   # optim_sche_load_path:  # optimizer scheduler checkpoint path
 
@@ -77,6 +79,8 @@ model:
         num_heads: 8
         context_dim: 128
         # num_head_channels: 64
+        use_fp16: True
+        use_checkpoint: True
         use_scale_shift_norm: True
         resblock_updown: True
         use_spatial_transformer: True

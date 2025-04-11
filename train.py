@@ -7,8 +7,10 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 from nuscenes.nuscenes import NuScenes
 import numpy as np
+from torch.amp import autocast, GradScaler
 
 from models.BrownianBridge.LatentBrownianBridgeModel import LatentBrownianBridgeModel
+from models.BrownianBridge.base.modules.diffusionmodules.openaimodel import convert_norm_layers_to_fp32
 from utils.nusc_dataloader import NuscData
 
 def load_config(path):
@@ -56,41 +58,37 @@ def train_cbbdm(
         model.train()
 
         for batch in tqdm(train_loader):
+            optimizer.zero_grad()
             step += 1
-            print("First entry")
-            x_noisy = batch["noisy_lidar_range"].to(device)
-            x_clean = batch["clean_lidar_range"].to(device)
+            x_noisy = batch["noisy_lidar_range"].to(device).half()
+            x_clean = batch["clean_lidar_range"].to(device).half()
             # Need to do this because the radar encoder takes 3 sets of tensors as input
-            x_radar = [item.to(device) for item in batch['radar_vox']]
-
-            print("Loaded Data")
+            x_radar = [item.to(device).half() for item in batch['radar_vox']]
             loss, log = model(x_noisy, x_clean, context=x_radar)
-            print("Forward pass complete")
-
             loss.backward()
+
             if clip_grad_norm is not None:
                 torch.nn.utils.clip_grad_norm_(model.parameters(), clip_grad_norm)
             optimizer.step()
-            optimizer.zero_grad()
 
             if scheduler is not None:
-                scheduler.step()
+                scheduler.step(loss)
 
-            train_losses.append((step, log["loss"].item())) 
+            train_losses.append((step, loss.item())) 
 
             if step % 100 == 0 or step == 1:
-                print(f"Step {step} | Loss: {log['loss'].item():.4f}")
+                print(f"Step {step} | Loss: {loss:.4f}")
 
             if step % val_interval == 0:
                 model.eval()
                 with torch.no_grad():
                     val_batch = next(iter(val_loader))
-                    val_clean = val_batch["clean_lidar_range"].to(device)
-                    val_noisy = val_batch["noisy_lidar_range"].to(device)
-                    val_radar = [item.to(device) for item in val_batch['radar_vox']] 
+                    val_clean = val_batch["clean_lidar_range"].to(device).half()
+                    val_noisy = val_batch["noisy_lidar_range"].to(device).half()
+                    val_radar = [item.to(device).half() for item in val_batch['radar_vox']] 
                     val_loss, _ = model(val_clean, val_noisy, context=val_radar)
-                    val_losses.append((step, val_loss.item()))
-                    print(f"[VAL @ step {step}] Loss: {val_loss.item():.4f}")
+                    val_losses.append((step, loss.item()))
+                    print(f"[VAL @ step {step}] Loss: {val_loss:.4f}")
 
                     if save_interval % step == 0:
                         val_recon = model.sample(val_noisy, val_radar)
@@ -115,14 +113,12 @@ def train_cbbdm(
                 ckpt_path = os.path.join(checkpoint_path, f"ckpt_step_{step}.pth")
                 torch.save(ckpt, ckpt_path)
                 print(f"Saved checkpoint at step {step}")
+                np.save(f"{log_dir}/train_losses_step_{step}.npy", np.array(train_losses))
+                np.save(f"{log_dir}/val_losses_step_{step}.npy", np.array(val_losses))
 
             if max_steps and step >= max_steps:
                 print("Reached max training steps.")
                 break
-    
-    np.save(f"{log_dir}/train_losses.npy", np.array(train_losses))
-    np.save(f"{log_dir}/val_losses.npy", np.array(val_losses))
-
 
 
 def main():
@@ -138,11 +134,14 @@ def main():
     train_dataset =  NuscData(nusc, config.data.noisy_data_path, is_train=True, nsweeps=1)
     val_dataset =  NuscData(nusc, config.data.noisy_data_path, is_train=False, nsweeps=1)
     train_loader = DataLoader(train_dataset, batch_size=config.data.train.batch_size,
-                              shuffle=config.data.train.shuffle, num_workers=8, drop_last=True)
+                              shuffle=config.data.train.shuffle, num_workers=1, drop_last=True)
     val_loader = DataLoader(val_dataset, batch_size=config.data.val.batch_size,
-                            shuffle=config.data.val.shuffle, num_workers=8, drop_last=True)
+                            shuffle=config.data.val.shuffle, num_workers=1, drop_last=True)
 
     model = LatentBrownianBridgeModel(config.model, device).to(device)
+    if config.model.use_half_precision:
+        model = model.half()
+        convert_norm_layers_to_fp32(model)
     ema = None
     optim_config = config.model.BB.optimizer
     if optim_config.optimizer.lower() == 'adam':
@@ -180,4 +179,5 @@ def main():
         resume_from=checkpoint_path
     )
 
+import os
 main()
