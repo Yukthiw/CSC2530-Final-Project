@@ -11,6 +11,7 @@ from torch.amp import autocast, GradScaler
 
 from models.BrownianBridge.LatentBrownianBridgeModel import LatentBrownianBridgeModel
 from models.BrownianBridge.base.modules.diffusionmodules.openaimodel import convert_norm_layers_to_fp32
+from utils.bb_utils import weights_init
 from utils.nusc_dataloader import NuscData
 import logging 
 
@@ -160,9 +161,11 @@ def main():
                             shuffle=config.data.val.shuffle, num_workers=1, drop_last=True)
 
     model = LatentBrownianBridgeModel(config.model, device).to(device)
+    model.denoise_fn.apply(weights_init)
     if config.model.use_half_precision:
         model = model.half()
         convert_norm_layers_to_fp32(model)
+   
     ema = None
     optim_config = config.model.BB.optimizer
     if optim_config.optimizer.lower() == 'adam':
