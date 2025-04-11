@@ -25,10 +25,13 @@ class LatentBrownianBridgeModel(BrownianBridgeModel):
         self.radar_encoder = VoxelNet()
         encoder_checkpoint = torch.load(model_config.RADAR_ENCODER.checkpoint_path)
         self.radar_encoder.load_state_dict(encoder_checkpoint['radar_encoder_state_dict'])
-        self.radar_encoder = self.radar_encoder.half()
+        if model_config.BB.params.UNetParams.use_fp16:
+            self.radar_encoder = self.radar_encoder.half()
+        
         self.lidar_encoder = Lidar_VAE(model_config.LIDAR_ENCODER.config_path, 
                                        model_config.LIDAR_ENCODER.checkpoint_path,
-                                       device)
+                                       device,
+                                       model_config.BB.params.UNetParams.use_fp16)
 
     # TODO: Figure out exactly how ema works and whether we want to use it
     def get_ema_net(self):

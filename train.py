@@ -49,6 +49,7 @@ def train_cbbdm(
     max_steps: int = None,
     clip_grad_norm: float = None,
     resume_from: str = None,
+    use_fp16: bool = False,
 ):
     step = 0
 
@@ -57,6 +58,7 @@ def train_cbbdm(
     val_recon_path = f"{log_dir}/validation/"
     os.makedirs(checkpoint_path, exist_ok=True)
     os.makedirs(log_path, exist_ok=True)
+    os.makedirs(val_recon_path, exist_ok=True)
     train_losses = []
     val_losses = []
 
@@ -73,55 +75,53 @@ def train_cbbdm(
     torch.autograd.set_detect_anomaly(True)
 
     for epoch in range(n_epochs):
-        print(f"Epoch {epoch + 1}/{n_epochs}")
+        logger.info(f"Epoch {epoch + 1}/{n_epochs}")
         model.train()
-
         for batch in tqdm(train_loader):
             optimizer.zero_grad()
             step += 1
-            x_noisy = batch["noisy_lidar_range"].to(device).half()
-            x_clean = batch["clean_lidar_range"].to(device).half()
+            x_noisy = batch["noisy_lidar_range"].to(device)
+            x_clean = batch["clean_lidar_range"].to(device)
             # Need to do this because the radar encoder takes 3 sets of tensors as input
-            x_radar = [item.to(device).half() for item in batch['radar_vox']]
-            logger.warning(f"Step: {step}")
+            x_radar = [item.to(device) for item in batch['radar_vox']]
+
+            if use_fp16:
+                x_noisy.half()
+                x_clean.half()
+                x_radar = [item.half() for item in x_radar]
+
             loss, log = model(x_noisy, x_clean, context=x_radar)
             loss.backward()
-            grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=clip_grad_norm or 1e10)
-
             optimizer.step()
 
             if scheduler is not None:
-                scheduler.step(loss)
+                scheduler.step(loss.item())
             train_losses.append((step, loss.item())) 
 
-            logger.warning(f"Loss: {loss.item()}")
-            logger.warning(f"Grad Norm: {grad_norm}")
-
-
             if step % 100 == 0 or step == 1:
-                print(f"Step {step} | Loss: {loss:.4f}")
+                logger.info(f"Step {step} | Loss: {loss:.4f}")
 
             if step % val_interval == 0:
                 model.eval()
                 with torch.no_grad():
                     val_batch = next(iter(val_loader))
-                    val_clean = val_batch["clean_lidar_range"].to(device).half()
-                    val_noisy = val_batch["noisy_lidar_range"].to(device).half()
-                    val_radar = [item.to(device).half() for item in val_batch['radar_vox']] 
+
+                    val_clean = val_batch["noisy_lidar_range"].to(device)
+                    val_noisy = val_batch["clean_lidar_range"].to(device)
+                    # Need to do this because the radar encoder takes 3 sets of tensors as input
+                    val_radar = [item.to(device) for item in val_batch['radar_vox']]
+                    if use_fp16:
+                        val_clean.half()
+                        val_noisy.half()
+                        val_radar = [item.half() for item in val_radar]
                     val_loss, _ = model(val_clean, val_noisy, context=val_radar)
                     val_losses.append((step, loss.item()))
-                    print(f"[VAL @ step {step}] Loss: {val_loss:.4f}")
+                    logger.info(f"[VAL @ step {step}] Loss: {val_loss:.4f}")
 
                     if save_interval % step == 0:
                         val_recon = model.sample(val_noisy, val_radar)
                         np.save(f"{val_recon_path}validation_epoch_{epoch}_step_{step}.npy", val_recon.cpu().numpy())
                 model.train()
-
-            # if sample_fn is not None and step % val_interval == 0:
-            #     model.eval()
-            #     with torch.no_grad():
-            #         sample_fn(model, step, save_dir=log_dir)
-            #     model.train()
 
             if step % save_interval == 0:
                 ckpt = {
@@ -134,12 +134,12 @@ def train_cbbdm(
 
                 ckpt_path = os.path.join(checkpoint_path, f"ckpt_step_{step}.pth")
                 torch.save(ckpt, ckpt_path)
-                print(f"Saved checkpoint at step {step}")
+                logger.info(f"Saved checkpoint at step {step}")
                 np.save(f"{log_dir}/train_losses_step_{step}.npy", np.array(train_losses))
                 np.save(f"{log_dir}/val_losses_step_{step}.npy", np.array(val_losses))
 
             if max_steps and step >= max_steps:
-                print("Reached max training steps.")
+                logger.warning("Reached max training steps.")
                 break
 
 
@@ -162,7 +162,7 @@ def main():
 
     model = LatentBrownianBridgeModel(config.model, device).to(device)
     model.denoise_fn.apply(weights_init)
-    if config.model.use_half_precision:
+    if config.model.BB.params.UNetParams.use_fp16:
         model = model.half()
         convert_norm_layers_to_fp32(model)
    

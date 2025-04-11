@@ -1,7 +1,7 @@
 
 # Latent Brownian Bridge Diffusion Model Template(Latent Space)
 training:
-  n_epochs: 100
+  n_epochs: 50
   n_steps: 200000
   save_interval: 20000
   val_interval: 500
@@ -9,21 +9,20 @@ data:
   clean_data_path: "/w/247/yukthiw/nuscenes_data/nuscenes/"
   noisy_data_path: "/w/246/willdormer/projects/CompImaging/augmented_pointclouds/samples/LIDAR_TOP/"
   train:
-    batch_size: 2
+    batch_size: 4
     shuffle: True
   val:
-    batch_size: 2
+    batch_size: 8
     shuffle: True
   test:
     batch_size: 4
     # shuffle: False
 
 model:
-  model_name: "C-LBBDM-f16" # part of result path
+  model_name: "C-LBBDM-1CA" # part of result path
   model_type: "C-LBBDM" # specify a module
   normalize_latent: False
   only_load_latent_mean_std: False
-  use_half_precision: True
 
   # model_load_path:  # model checkpoint path
   # optim_sche_load_path:  # optimizer scheduler checkpoint path
@@ -72,14 +71,14 @@ model:
         model_channels: 128
         out_channels: 4
         num_res_blocks: 2
-        attention_resolutions: [4, 2, 1]
+        attention_resolutions: [4]
         channel_mult: [1, 4, 8]
         conv_resample: True
         dims: 2
         num_heads: 8
         context_dim: 128
         # num_head_channels: 64
-        use_fp16: True
+        use_fp16: False
         use_checkpoint: True
         use_scale_shift_norm: True
         resblock_updown: True

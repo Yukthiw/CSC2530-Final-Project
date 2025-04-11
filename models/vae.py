@@ -4,7 +4,7 @@ import safetensors
 from models.replace_models import replace_attn, replace_conv, replace_down
 
 class Lidar_VAE():
-    def __init__(self, vae_config, vae_checkpoint, device):
+    def __init__(self, vae_config, vae_checkpoint, device, use_fp16=False):
         config = AutoencoderKL.load_config(vae_config)
         vae = AutoencoderKL.from_config(config)
         vae_checkpoint = safetensors.torch.load_file(vae_checkpoint)
@@ -16,7 +16,9 @@ class Lidar_VAE():
         if 'encoder.mid_block.attentions.0.to_q.weight' not in vae_checkpoint:
             replace_attn(vae)
         vae.load_state_dict(vae_checkpoint)
-        self.vae = vae.to(device).half()
+        self.vae = vae.to(device)
+        if use_fp16:
+            self.vae = vae.half()
         self.device = device
     
     def print_total_params(self):

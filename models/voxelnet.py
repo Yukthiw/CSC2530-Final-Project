@@ -110,7 +110,7 @@ class VFE(nn.Module):
         # apply mask
         # (repeat for number of out_channels per voxel)
         mask = mask.unsqueeze(3).repeat(1, 1, 1, self.out_channels)
-        pwcf = pwcf * mask.half()
+        pwcf = pwcf * mask
 
         return pwcf  # poit-wise concatenated feature
 
@@ -134,7 +134,7 @@ class SVFE(nn.Module):
         x = self.fcn(x)
         # apply mask again to remove invalid features
         mask = mask.unsqueeze(3).repeat(1, 1, 1, x.shape[-1])
-        x = x * mask.half()
+        x = x * mask
         # element-wise max pooling
         x = torch.max(x, dim=2)[0]
         return x
@@ -276,7 +276,7 @@ class VoxelNet(nn.Module):
 
         vox_inds = base + z * dim2 + y * dim3 + x
 
-        feat_voxels = torch.zeros((B * Z * Y * X, D2), device=sparse_features.device).half()
+        feat_voxels = torch.zeros((B * Z * Y * X, D2), device=sparse_features.device)
         feat_voxels[vox_inds.long()] = feat
 
         # zero out the singularity
@@ -286,7 +286,7 @@ class VoxelNet(nn.Module):
 
         # new: permute shape such that they fit the 3D Conv layers ZYX -> YZX
         # dense_feature = dense_feature.permute(0, 1, 3, 2, 4)
-        occupancy_map = torch.zeros((B * Z * Y * X, D2), device=sparse_features.device).half()
+        occupancy_map = torch.zeros((B * Z * Y * X, D2), device=sparse_features.device)
         occupancy_map[vox_inds.long()] = 1.0
         occupancy_map[base.long()] = 0.0
         occupancy_map = occupancy_map.reshape(B, Z, Y, X, D2).permute(0, 4, 1, 2, 3)
