@@ -16,7 +16,7 @@ class Lidar_VAE():
         if 'encoder.mid_block.attentions.0.to_q.weight' not in vae_checkpoint:
             replace_attn(vae)
         vae.load_state_dict(vae_checkpoint)
-        self.vae = vae
+        self.vae = vae.to(device)
         self.device = device
     
     def print_total_params(self):
