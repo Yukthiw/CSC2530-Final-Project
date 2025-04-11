@@ -12,6 +12,22 @@ from torch.amp import autocast, GradScaler
 from models.BrownianBridge.LatentBrownianBridgeModel import LatentBrownianBridgeModel
 from models.BrownianBridge.base.modules.diffusionmodules.openaimodel import convert_norm_layers_to_fp32
 from utils.nusc_dataloader import NuscData
+import logging 
+
+logger = logging.getLogger("train_debug")
+logger.setLevel(logging.DEBUG)
+
+# Prevent duplicate handlers if this gets run more than once (e.g., in notebook/testing)
+if not logger.handlers:
+    fh = logging.FileHandler("train_debug.log", mode='a')
+    fh.setLevel(logging.DEBUG)
+
+    # Add a formatter
+    formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+    fh.setFormatter(formatter)
+
+    logger.addHandler(fh)
+    logger.propagate = False  # Don't pass logs to root logger
 
 def load_config(path):
     with open(path, 'r') as f:
@@ -53,6 +69,8 @@ def train_cbbdm(
             scheduler.load_state_dict(checkpoint["scheduler"])
         print(f"Checkpoint loaded at step {step}")
 
+    torch.autograd.set_detect_anomaly(True)
+
     for epoch in range(n_epochs):
         print(f"Epoch {epoch + 1}/{n_epochs}")
         model.train()
@@ -64,17 +82,20 @@ def train_cbbdm(
             x_clean = batch["clean_lidar_range"].to(device).half()
             # Need to do this because the radar encoder takes 3 sets of tensors as input
             x_radar = [item.to(device).half() for item in batch['radar_vox']]
+            logger.warning(f"Step: {step}")
             loss, log = model(x_noisy, x_clean, context=x_radar)
             loss.backward()
+            grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=clip_grad_norm or 1e10)
 
-            if clip_grad_norm is not None:
-                torch.nn.utils.clip_grad_norm_(model.parameters(), clip_grad_norm)
             optimizer.step()
 
             if scheduler is not None:
                 scheduler.step(loss)
-
             train_losses.append((step, loss.item())) 
+
+            logger.warning(f"Loss: {loss.item()}")
+            logger.warning(f"Grad Norm: {grad_norm}")
+
 
             if step % 100 == 0 or step == 1:
                 print(f"Step {step} | Loss: {loss:.4f}")
