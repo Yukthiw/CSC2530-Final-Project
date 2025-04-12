@@ -63,32 +63,8 @@ def visualize_pc_bev(pc, save_path=None):
     else:
         plt.show()
         
-def save_point_cloud_to_ply(point_cloud, filename):
-    """
-    Save a point cloud to a PLY file using Open3D.
-    
-    :param point_cloud: np.array of shape (N, 3) or (N, 4), where N is the number of points
-    :param filename: The name of the PLY file to save
-    """
-    # Create an Open3D PointCloud object
-    pcd = o3d.geometry.PointCloud()
-
-    # If point cloud has 4 channels (x, y, z, intensity), separate them
-    if point_cloud.shape[1] == 4:
-        points = point_cloud[:, :3]  # Take the first 3 columns as the points
-        colors = point_cloud[:, 3:]  # The 4th column is intensity (or any other feature)
-        pcd.points = o3d.utility.Vector3dVector(points)
-        # Normalize the intensity to [0, 1] for coloring
-        colors = np.clip(colors / np.max(colors), 0, 1)
-        pcd.colors = o3d.utility.Vector3dVector(colors)
-    else:
-        pcd.points = o3d.utility.Vector3dVector(point_cloud)
-
-    # Save the point cloud to a PLY file
-    o3d.io.write_point_cloud(filename, pcd)
-    print(f"Point cloud saved to {filename}")
         
-def plot_point_cloud_comparison(pc1, pc2, save_path="comparison_output.html"):
+def plot_point_cloud_comparison(pc1, pc2, save_path="comparison_output.html", title1="PC 1", title2= "PC 2"):
     """
     Visualize and compare two point clouds using Plotly, with the fourth column used for color mapping.
     
@@ -121,7 +97,7 @@ def plot_point_cloud_comparison(pc1, pc2, save_path="comparison_output.html"):
         z=pc1_points[:, 2], 
         mode='markers', 
         marker=dict(size=2, color=intensity1, colorscale='Viridis', opacity=0.8),
-        name='Point Cloud 1',
+        name=title1,
         showlegend=True
     )
 
@@ -131,7 +107,7 @@ def plot_point_cloud_comparison(pc1, pc2, save_path="comparison_output.html"):
         z=pc2_points[:, 2], 
         mode='markers', 
         marker=dict(size=2, color=intensity2, colorscale='CiVidis', opacity=0.8),
-        name='Point Cloud 2',
+        name=title2,
         showlegend=True
     )
 
@@ -147,7 +123,7 @@ def plot_point_cloud_comparison(pc1, pc2, save_path="comparison_output.html"):
         showlegend=True,
              # Adjust the layout to ensure it's visible above other elements
         legend=dict(
-                x=1.05,  # Position the legend outside the plot to the right
+                x=-10.05,  # Position the legend outside the plot to the right
                 y=30,     # Align it at the top of the plot
                 traceorder='normal',
                 orientation='v',
