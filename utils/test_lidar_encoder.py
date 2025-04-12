@@ -70,7 +70,8 @@ def main():
     # Command-line args
     config_path = sys.argv[1]
     data_path = sys.argv[2]
-    log_path = sys.argv[3]  # Not used now, but available
+    weather_path =  sys.argv[3]
+    log_path = sys.argv[4]  # Not used now, but available
 
     # Load config and setup device
     config = load_config(config_path)
@@ -80,7 +81,7 @@ def main():
     nusc = NuScenes(version='v1.0-trainval', dataroot=data_path, verbose=True)
 
     # Dataset and loader
-    train_dataset = NuscData(nusc,noisy_lidar_dataroot="/w/246/willdormer/projects/CompImaging/augmented_pointclouds/samples/LIDAR_TOP/", is_train=True, nsweeps=1)
+    train_dataset = NuscData(nusc,noisy_lidar_dataroot=weather_path, is_train=True, nsweeps=1)
     train_loader = DataLoader(
         train_dataset,
         batch_size=1,
