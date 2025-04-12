@@ -96,6 +96,49 @@ class Lidar_to_range_image():
         range_image[..., 0] = (range_image[..., 0] - self.mean) / self.std
         return range_image
     
+    
+    def to_pc_torch(self, range_images):
+        '''
+        range_images: Bx2xWxH
+        output:
+            point_cloud: BxNx4
+        '''
+        device = range_images.device
+        incl_t = torch.from_numpy(self.incl).to(device)
+        height_t = torch.from_numpy(self.height).to(device)
+        batch_size, channels, width_dim, height_dim = range_images.shape
+
+        # Extract point range and remission
+        point_range = range_images[:, 0, :, :] * self.std + self.mean # BxWxH
+        if range_images.shape[1] > 1:
+            remission = range_images[:, 1, :, :].reshape(batch_size, -1)
+
+        r_true = point_range 
+
+        r_true[r_true<0] = self.range_fill_value[0]
+
+        # Calculate z
+        z = (height_t[None,None,:] - r_true * torch.sin(incl_t[None,None,:])).reshape(batch_size, -1)
+
+        # Calculate xy_norm
+        xy_norm = r_true * torch.cos(incl_t[None,None,:])
+
+        # Calculate azi
+        width = width_dim
+        azi = (width - 0.5 - torch.arange(0, width, device=device)) / width * 2. * torch.pi - torch.pi
+
+        # Calculate x and y
+        x = (xy_norm * torch.cos(azi[None,:,None])).reshape(batch_size, -1)
+        y = (xy_norm * torch.sin(azi[None,:,None])).reshape(batch_size, -1)
+
+        # Concatenate the arrays to create the point cloud
+        if range_images.shape[1] > 1:
+            point_cloud = torch.stack([x, y, z, remission], dim=2)
+        else:
+            point_cloud = torch.stack([x, y, z], dim=2)
+
+        return point_cloud
+    
 
     def __call__(self, lidar_pc):
             
