@@ -124,7 +124,7 @@ def plot_point_cloud_comparison(pc1, pc2, save_path="comparison_output.html", ti
              # Adjust the layout to ensure it's visible above other elements
         legend=dict(
                 x=-10.05,  # Position the legend outside the plot to the right
-                y=30,     # Align it at the top of the plot
+                y=50,     # Align it at the top of the plot
                 traceorder='normal',
                 orientation='v',
                 font=dict(size=12),
