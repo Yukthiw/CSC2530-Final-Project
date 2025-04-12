@@ -205,6 +205,7 @@ class NuscData(Dataset):
             RADAR_SIZE = 700 * self.nsweeps
             radar_data = self.trim_pad_pc(radar_pc, RADAR_SIZE)
             radar_vox = self.voxelizer.voxelize(radar_data.unsqueeze(0))
+            radar_vox = [item.squeeze(0) for item in radar_vox]
 
             gt_lidar_range = self.range_img(gt_lidar_pc)
             noisy_lidar_range = self.range_img(noisy_lidar_pc)

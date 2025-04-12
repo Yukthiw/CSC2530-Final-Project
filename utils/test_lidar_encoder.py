@@ -73,8 +73,8 @@ def main():
     weather_path =  sys.argv[3]
     log_path = sys.argv[4]  # Not used now, but available
 
-    # Load config and setup device
-    config = load_config(config_path)
+    # # Load config and setup device
+    # config = load_config(config_path)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     # Load NuScenes
