@@ -8,7 +8,7 @@ from pathlib import Path
 class Lidar_to_range_image():
     def __init__(self):
         self.file_paths = None
-        self.range_fill_value = np.array([100, 0])
+        self.range_fill_value = np.array([200, 0])
         self.height = np.array([
             -0.00216031, -0.00098729, -0.00020528,  0.00174976,  0.0044868, -0.00294233,
             -0.00059629, -0.00020528,  0.00174976, -0.00294233, -0.0013783,  0.00018573,
@@ -30,6 +30,7 @@ class Lidar_to_range_image():
         self.H = 32
         self.mean = 50.
         self.std = 50.
+        self.range_limit = 190.0
 
 
     def get_pts(self, pts_path):
@@ -96,6 +97,56 @@ class Lidar_to_range_image():
         range_image[..., 0] = (range_image[..., 0] - self.mean) / self.std
         return range_image
     
+    
+    def to_pc_torch(self, range_images):
+        '''
+        range_images: Bx2xWxH
+        output:
+            point_cloud: BxNx4
+        '''
+        device = range_images.device
+        incl_t = torch.from_numpy(self.incl).to(device)
+        height_t = torch.from_numpy(self.height).to(device)
+        batch_size, channels, width_dim, height_dim = range_images.shape
+
+        # Extract point range and remission
+        point_range = range_images[:, 0, :, :] * self.std + self.mean # BxWxH
+        if range_images.shape[1] > 1:
+            remission = range_images[:, 1, :, :].reshape(batch_size, -1)
+
+        r_true = point_range 
+
+        r_true[r_true<0] = self.range_fill_value[0]
+
+        # Calculate z
+        z = (height_t[None,None,:] - r_true * torch.sin(incl_t[None,None,:])).reshape(batch_size, -1)
+
+        # Calculate xy_norm
+        xy_norm = r_true * torch.cos(incl_t[None,None,:])
+
+        # Calculate azi
+        width = width_dim
+        azi = (width - 0.5 - torch.arange(0, width, device=device)) / width * 2. * torch.pi - torch.pi
+
+        # Calculate x and y
+        x = (xy_norm * torch.cos(azi[None,:,None])).reshape(batch_size, -1)
+        y = (xy_norm * torch.sin(azi[None,:,None])).reshape(batch_size, -1)
+
+        # Concatenate the arrays to create the point cloud
+        if range_images.shape[1] > 1:
+            point_cloud = torch.stack([x, y, z, remission], dim=2)
+        else:
+            point_cloud = torch.stack([x, y, z], dim=2)
+        return point_cloud
+
+    def remove_outliers(self, point_cloud):
+        '''
+        in: point cloud Nx4
+        out: point cloud Nx4
+        '''
+        depth = torch.norm(point_cloud[:, :3], dim=1)
+        mask = depth < self.range_limit
+        return point_cloud[mask]
 
     def __call__(self, lidar_pc):
             
