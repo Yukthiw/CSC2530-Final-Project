@@ -19,7 +19,7 @@ data:
     # shuffle: False
 
 model:
-  model_name: "C-LBBDM-1CA" # part of result path
+  model_name: "C-LBBDM-Compressed" # part of result path
   model_type: "C-LBBDM" # specify a module
   normalize_latent: False
   only_load_latent_mean_std: False
@@ -71,13 +71,16 @@ model:
         model_channels: 128
         out_channels: 4
         num_res_blocks: 2
-        attention_resolutions: [4]
+        attention_resolutions: [2, 4]
         channel_mult: [1, 4, 8]
         conv_resample: True
         dims: 2
         num_heads: 8
         context_dim: 128
-        # num_head_channels: 64
+        concat_channels: 16
+        context_downsample_size: [48, 48]
+        compressed_dim: 64
+        # num_ad_channels: 64
         use_fp16: False
         use_checkpoint: True
         use_scale_shift_norm: True

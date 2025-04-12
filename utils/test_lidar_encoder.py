@@ -19,24 +19,24 @@ def load_config(path):
 
 def main():
     # Command-line args
-    config_path = sys.argv[1]
-    data_path = sys.argv[2]
-    log_path = sys.argv[3]  # Not used now, but available
+    # config_path = sys.argv[1]
+    # data_path = sys.argv[2]
+    # log_path = sys.argv[3]  # Not used now, but available
 
-    # Load config and setup device
-    config = load_config(config_path)
+    # # Load config and setup device
+    # config = load_config(config_path)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     # Load NuScenes
-    nusc = NuScenes(version='v1.0-mini', dataroot=data_path, verbose=True)
+    nusc = NuScenes(version='v1.0-mini', dataroot='/u/yukthiw/files/nuscenes/mini', verbose=True)
 
     # Dataset and loader
     train_dataset = NuscData(nusc, is_train=True, nsweeps=1)
     train_loader = DataLoader(
         train_dataset,
-        batch_size=config.data.train.batch_size,
-        shuffle=config.data.train.shuffle,
-        num_workers=8,
+        batch_size=8,
+        shuffle=True,
+        num_workers=1,
         drop_last=True
     )
 
