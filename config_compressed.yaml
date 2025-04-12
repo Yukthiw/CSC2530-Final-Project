@@ -77,6 +77,7 @@ model:
         dims: 2
         num_heads: 8
         context_dim: 128
+        concat_channels: 16
         context_downsample_size: [48, 48]
         compressed_dim: 64
         # num_ad_channels: 64

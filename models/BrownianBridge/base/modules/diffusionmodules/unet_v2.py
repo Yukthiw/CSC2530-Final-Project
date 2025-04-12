@@ -117,6 +117,7 @@ class UNetModelV2(nn.Module):
         compressed_dim=None,                 # custom transformer support
         n_embed=None,                     # custom support for prediction of discrete ids into codebook of first stage vq model
         legacy=True,
+        concat_channels = None,
         condition_key="cross-attention",
     ):
         super().__init__()
@@ -136,7 +137,7 @@ class UNetModelV2(nn.Module):
             assert compressed_dim, "Specify the dimension of the compressed context latent."
 
         self.image_size = min(image_size) # Take the smallest latent feature dimension
-        self.in_channels = in_channels + 16
+        self.in_channels = in_channels + concat_channels if concat_channels else in_channels
         self.model_channels = model_channels
         self.out_channels = out_channels
         self.num_res_blocks = num_res_blocks
@@ -152,7 +153,7 @@ class UNetModelV2(nn.Module):
         self.num_heads_upsample = num_heads_upsample
         self.predict_codebook_ids = n_embed is not None
         self.condition_key = condition_key
-        self.concat_downprojector = DownProjector(in_channels=context_dim, out_channels=16, target_shape=image_size)
+        self.concat_downprojector = DownProjector(in_channels=context_dim, out_channels=concat_channels, target_shape=image_size) if concat_channels else None
         self.attention_downprojector = ConvCompressor(in_channels=context_dim, out_channels=64, target_shape=context_downsample_size) if context_downsample_size else None
         
         self.context_dim = context_dim if not context_downsample_size else compressed_dim
