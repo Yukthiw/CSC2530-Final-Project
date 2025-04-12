@@ -39,7 +39,7 @@ class BrownianBridgeModel(nn.Module):
         self.channels = model_params.UNetParams.in_channels
         self.condition_key = model_params.UNetParams.condition_key
 
-        self.denoise_fn = UNetModel(**vars(model_params.UNetParams)) if not model_params.UNetParams.context_downsample_size else UNetModelV2(**vars(model_params.UNetParams))
+        self.denoise_fn = UNetModelV2(**vars(model_params.UNetParams))
 
     def register_schedule(self):
         '''

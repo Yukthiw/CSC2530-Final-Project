@@ -48,7 +48,7 @@ class ConvCompressor(nn.Module):
             nn.GroupNorm(8, 96),
             nn.SiLU(),
             nn.Conv2d(96, 64, kernel_size=3, stride=2, padding=1),
-            nn.GroupNorm(6, 64),
+            nn.GroupNorm(8, 64),
             nn.SiLU(),
             nn.Conv2d(64, out_channels, kernel_size=3, stride=1, padding=1),
             nn.GroupNorm(4, out_channels),
@@ -132,11 +132,11 @@ class UNetModelV2(nn.Module):
         if num_head_channels == -1:
             assert num_heads != -1, 'Either num_heads or num_head_channels has to be set'
         
-        if context_downsample_size:
+        if context_downsample_size is not None:
             assert compressed_dim, "Specify the dimension of the compressed context latent."
 
         self.image_size = min(image_size) # Take the smallest latent feature dimension
-        self.in_channels = in_channels
+        self.in_channels = in_channels + 16
         self.model_channels = model_channels
         self.out_channels = out_channels
         self.num_res_blocks = num_res_blocks
@@ -156,7 +156,6 @@ class UNetModelV2(nn.Module):
         self.attention_downprojector = ConvCompressor(in_channels=context_dim, out_channels=64, target_shape=context_downsample_size) if context_downsample_size else None
         
         self.context_dim = context_dim if not context_downsample_size else compressed_dim
-
         time_embed_dim = model_channels * 4
         self.time_embed = nn.Sequential(
             linear(model_channels, time_embed_dim),
@@ -170,7 +169,7 @@ class UNetModelV2(nn.Module):
         self.input_blocks = nn.ModuleList(
             [
                 TimestepEmbedSequential(
-                    conv_nd(dims, in_channels, model_channels, 3, padding=1)
+                    conv_nd(dims, self.in_channels, model_channels, 3, padding=1)
                 )
             ]
         )
@@ -210,7 +209,7 @@ class UNetModelV2(nn.Module):
                             num_head_channels=dim_head,
                             use_new_attention_order=use_new_attention_order,
                         ) if not use_spatial_transformer else SpatialTransformer(
-                            ch, num_heads, dim_head, depth=transformer_depth, context_dim=context_dim
+                            ch, num_heads, dim_head, depth=transformer_depth, context_dim=self.context_dim
                         )
                     )
                 self.input_blocks.append(TimestepEmbedSequential(*layers))
@@ -267,7 +266,7 @@ class UNetModelV2(nn.Module):
                 num_head_channels=dim_head,
                 use_new_attention_order=use_new_attention_order,
             ) if not use_spatial_transformer else SpatialTransformer(
-                            ch, num_heads, dim_head, depth=transformer_depth, context_dim=context_dim
+                            ch, num_heads, dim_head, depth=transformer_depth, context_dim=self.context_dim
                         ),
             ResBlock(
                 ch,
@@ -314,7 +313,7 @@ class UNetModelV2(nn.Module):
                             num_head_channels=dim_head,
                             use_new_attention_order=use_new_attention_order,
                         ) if not use_spatial_transformer else SpatialTransformer(
-                            ch, num_heads, dim_head, depth=transformer_depth, context_dim=context_dim
+                            ch, num_heads, dim_head, depth=transformer_depth, context_dim=self.context_dim
                         )
                     )
                 if level and i == num_res_blocks:
@@ -372,28 +371,29 @@ class UNetModelV2(nn.Module):
         t_emb = timestep_embedding(timesteps, self.model_channels, repeat_only=False)
 
         emb = self.time_embed(t_emb.type(self.dtype))
+        context_latent = context
 
         if self.num_classes is not None:
             assert y.shape == (x.shape[0],)
             emb = emb + self.label_emb(y)
 
         if self.condition_key != 'nocond':
-            down_projected_context = self.concat_downprojector(context.detach())
+            down_projected_context = self.concat_downprojector(context_latent.detach())
             x = th.cat([x, down_projected_context], dim=1)
 
         if self.attention_downprojector:
-            context = self.attention_downprojector(context)
+            context_latent = self.attention_downprojector(context)
 
         h = x.type(self.dtype)
         for module in self.input_blocks:
-            h = module(h, emb, context)
+            h = module(h, emb, context_latent)
             hs.append(h)
-        h = self.middle_block(h, emb, context)
+        h = self.middle_block(h, emb, context_latent)
 
         for module in self.output_blocks:
             hspop = hs.pop()
             h = th.cat([h, hspop], dim=1)
-            h = module(h, emb, context)
+            h = module(h, emb, context_latent)
         h = h.type(x.dtype)
 
         if self.predict_codebook_ids:

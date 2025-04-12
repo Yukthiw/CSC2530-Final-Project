@@ -19,7 +19,7 @@ data:
     # shuffle: False
 
 model:
-  model_name: "C-LBBDM-1CA" # part of result path
+  model_name: "C-LBBDM-Concat" # part of result path
   model_type: "C-LBBDM" # specify a module
   normalize_latent: False
   only_load_latent_mean_std: False
@@ -77,7 +77,7 @@ model:
         dims: 2
         num_heads: 8
         context_dim: 128
-        # num_head_channels: 64
+        # num_ad_channels: 64
         use_fp16: False
         use_checkpoint: True
         use_scale_shift_norm: True

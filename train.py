@@ -11,25 +11,13 @@ from torch.amp import autocast, GradScaler
 
 from models.BrownianBridge.LatentBrownianBridgeModel import LatentBrownianBridgeModel
 from models.BrownianBridge.base.modules.diffusionmodules.openaimodel import convert_norm_layers_to_fp32
+from models.BrownianBridge.base.modules.image_degradation.utils_image import calculate_ssim, ssim
 from utils.bb_utils import weights_init
 from utils.nusc_dataloader import NuscData
 import logging 
 
 logger = logging.getLogger("train_debug")
 logger.setLevel(logging.DEBUG)
-
-# Prevent duplicate handlers if this gets run more than once (e.g., in notebook/testing)
-if not logger.handlers:
-    fh = logging.FileHandler("train_debug.log", mode='a')
-    fh.setLevel(logging.DEBUG)
-
-    # Add a formatter
-    formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-    fh.setFormatter(formatter)
-
-    logger.addHandler(fh)
-    logger.propagate = False  # Don't pass logs to root logger
-
 def load_config(path):
     with open(path, 'r') as f:
         return EasyDict(yaml.safe_load(f))
@@ -106,21 +94,22 @@ def train_cbbdm(
                 with torch.no_grad():
                     val_batch = next(iter(val_loader))
 
-                    val_clean = val_batch["noisy_lidar_range"].to(device)
-                    val_noisy = val_batch["clean_lidar_range"].to(device)
+                    val_noisy = val_batch["noisy_lidar_range"].to(device)
+                    val_clean = val_batch["clean_lidar_range"].to(device)
                     # Need to do this because the radar encoder takes 3 sets of tensors as input
                     val_radar = [item.to(device) for item in val_batch['radar_vox']]
                     if use_fp16:
                         val_clean.half()
                         val_noisy.half()
                         val_radar = [item.half() for item in val_radar]
-                    val_loss, _ = model(val_clean, val_noisy, context=val_radar)
+                    val_loss, _ = model(val_noisy, val_clean, context=val_radar)
                     val_losses.append((step, loss.item()))
                     logger.info(f"[VAL @ step {step}] Loss: {val_loss:.4f}")
 
-                    if save_interval % step == 0:
+                    if step % 2000 == 0:
                         val_recon = model.sample(val_noisy, val_radar)
                         np.save(f"{val_recon_path}validation_epoch_{epoch}_step_{step}.npy", val_recon.cpu().numpy())
+                        np.save(f"{val_recon_path}gt_epoch_{epoch}_step_{step}.npy", val_clean.cpu().numpy())
                 model.train()
 
             if step % save_interval == 0:
@@ -146,9 +135,21 @@ def train_cbbdm(
 def main():
     # TODO: Have better argument handling than this
     config_path = sys.argv[1]
-    log_path = sys.argv[2] 
-    checkpoint_path = sys.argv[3] if len(sys.argv) == 4 else None
+    log_path = sys.argv[2]
+    log_name = sys.argv[3]
+    checkpoint_path = sys.argv[4] if len(sys.argv) == 5 else None
 
+    # Prevent duplicate handlers if this gets run more than once (e.g., in notebook/testing)
+    if not logger.handlers:
+        fh = logging.FileHandler(f"{log_name}.log", mode='a')
+        fh.setLevel(logging.DEBUG)
+
+        # Add a formatter
+        formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+        fh.setFormatter(formatter)
+
+        logger.addHandler(fh)
+        logger.propagate = False  # Don't pass logs to root logger
     config = load_config(config_path)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     nusc = NuScenes(version='v1.0-trainval', dataroot=config.data.clean_data_path, verbose=True)
@@ -158,7 +159,7 @@ def main():
     train_loader = DataLoader(train_dataset, batch_size=config.data.train.batch_size,
                               shuffle=config.data.train.shuffle, num_workers=1, drop_last=True)
     val_loader = DataLoader(val_dataset, batch_size=config.data.val.batch_size,
-                            shuffle=config.data.val.shuffle, num_workers=1, drop_last=True)
+                            shuffle=config.data.val.shuffle, num_workers=0, drop_last=True)
 
     model = LatentBrownianBridgeModel(config.model, device).to(device)
     model.denoise_fn.apply(weights_init)
