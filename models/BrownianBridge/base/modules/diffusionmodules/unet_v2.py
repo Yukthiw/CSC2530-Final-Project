@@ -378,7 +378,7 @@ class UNetModelV2(nn.Module):
             assert y.shape == (x.shape[0],)
             emb = emb + self.label_emb(y)
 
-        if self.condition_key != 'nocond':
+        if self.concat_downprojector:
             down_projected_context = self.concat_downprojector(context_latent.detach())
             x = th.cat([x, down_projected_context], dim=1)
 
