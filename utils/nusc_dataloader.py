@@ -152,6 +152,18 @@ class NuscData(Dataset):
         lidar_pc = np.fromfile(lidar_path, dtype=np.float32).reshape(-1, 5) # Shape [M, 5]
 
         return torch.Tensor(lidar_pc)
+    
+    def get_ring_inds(self, pc):
+            xy_norm = np.linalg.norm(pc[:, :2], ord = 2, axis = 1)
+            error_list = []
+            for i in range(len(self.range_img.incl)):
+                h = self.range_img.height[i]
+                theta = self.range_img.incl[i]
+                error = np.abs(theta - np.arctan2(h - pc[:,2], xy_norm))
+                error_list.append(error)
+            all_error = np.stack(error_list, axis=-1)
+            row_inds = np.argmin(all_error, axis=-1)
+            return 31 - row_inds
 
     def get_perturbed_lidar_data(self, rec):
         """
@@ -163,6 +175,7 @@ class NuscData(Dataset):
         aug_path = os.path.join(self.augmented_pc_dataroot, base_filename + '.npy')
         if os.path.exists(aug_path):
             lidar_pc = np.load(aug_path)  # Shape [M, 5]
+            lidar_pc[:, 4] = self.get_ring_inds(lidar_pc) # Need to fill in ring ix
             return torch.Tensor(lidar_pc)
         else:
             raise FileExistsError(f"{aug_path} does not exist.")
