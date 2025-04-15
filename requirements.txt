@@ -4,6 +4,7 @@ numpy==1.25.0
 torch
 torchvision
 torchaudio
+easydict
 # Install NuScenes devkit
 nuscenes-devkit
 diffusers==0.26.3

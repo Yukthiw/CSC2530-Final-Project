@@ -28,7 +28,7 @@ model:
   # optim_sche_load_path:  # optimizer scheduler checkpoint path
 
   RADAR_ENCODER:
-    checkpoint_path: "/u/yukthiw/files/CSC2530-Final-Project/checkpoints/radar_encoder.pth"
+    checkpoint_path: "/w/331/yukthiw/CSC2530-Final-Project/checkpoints/radar_encoder.pth"
   LIDAR_ENCODER:
     checkpoint_path: "/w/331/abarroso/vae_model/nuscenes/vae/diffusion_pytorch_model.safetensors"
     config_path: "/w/331/abarroso/vae_model/nuscenes/vae/config.json"
