@@ -8,7 +8,7 @@ from pathlib import Path
 class Lidar_to_range_image():
     def __init__(self):
         self.file_paths = None
-        self.range_fill_value = np.array([200, 0])
+        self.range_fill_value = np.array([100, 0])
         self.height = np.array([
             -0.00216031, -0.00098729, -0.00020528,  0.00174976,  0.0044868, -0.00294233,
             -0.00059629, -0.00020528,  0.00174976, -0.00294233, -0.0013783,  0.00018573,
@@ -30,7 +30,7 @@ class Lidar_to_range_image():
         self.H = 32
         self.mean = 50.
         self.std = 50.
-        self.range_limit = 190.0
+        self.range_limit = 90.0
 
 
     def get_pts(self, pts_path):
