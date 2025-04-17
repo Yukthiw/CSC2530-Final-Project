@@ -10,3 +10,5 @@ diffusers==0.26.3
 safetensors==0.5.3
 transformers==4.31.0
 plotly==6.0.1
+einops
+huggingface-hub==0.21.3

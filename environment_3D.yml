@@ -1,0 +1,13 @@
+# this environment supports pytorch3d for the chamfer distance calculation
+name: bbdm_3d
+dependencies:
+  - python=3.9
+  - pytorch3d
+  - iopath
+  - opencv
+  - ipykernel
+  - matplotlib
+  # - esri::einops
+  - safetensors
+  - conda-forge::easydict
+  - pip

@@ -12,6 +12,10 @@ from utils.bb_utils import extract, default
 from models.BrownianBridge.base.modules.diffusionmodules.openaimodel import UNetModel
 from models.BrownianBridge.base.modules.encoders.modules import SpatialRescaler
 
+# imports for 3D loss function
+from utils.lidar_encoder_utils import Lidar_to_range_image as LTR
+from pytorch3d.loss import chamfer_distance
+
 
 class BrownianBridgeModel(nn.Module):
     def __init__(self, model_config):
@@ -34,12 +38,50 @@ class BrownianBridgeModel(nn.Module):
         self.loss_type = model_params.loss_type
         self.objective = model_params.objective
 
+        if self.loss_type == "chamfer":
+            # custom loss function
+            self.LTR = LTR() # lidar to range image class instance.
+            self.range_to_pointcloud = self.LTR.to_pc_torch #
+
+            if self.decode_lidar == None:
+                ValueError("missing valid override of 'decode_lidar' in BrownianBridgeModel")
+            if self.range_to_pointcloud == None:
+                ValueError("missing valid override of 'range_to_pointcloud' in BrownianBridgeModel")
+        
+
+
         # UNet
         self.image_size = model_params.UNetParams.image_size
         self.channels = model_params.UNetParams.in_channels
         self.condition_key = model_params.UNetParams.condition_key
 
+        
+
         self.denoise_fn = UNetModelV2(**vars(model_params.UNetParams))
+
+    # def chamfer_dist(self, pc1, pc2):
+    #     """
+    #     Computes Chamfer Distance between two point clouds.
+    #     :param pc1: (B, N, 3)
+    #     :param pc2: (B, M, 3)
+    #     :return: scalar Chamfer distance averaged over the batch
+    #     """
+    #     # Compute pairwise distance
+    #     B, N, _ = pc1.shape
+    #     _, M, _ = pc2.shape
+
+    #     # (B, N, 1, 3) - (B, 1, M, 3) => (B, N, M)
+    #     pc1_expand = pc1.unsqueeze(2)  # (B, N, 1, 3)
+    #     pc2_expand = pc2.unsqueeze(1)  # (B, 1, M, 3)
+    #     dist = torch.norm(pc1_expand - pc2_expand, dim=-1)  # (B, N, M)
+
+    #     # For each point in pc1, find nearest neighbor in pc2
+    #     dist1 = dist.min(dim=2)[0]  # (B, N)
+    #     # For each point in pc2, find nearest neighbor in pc1
+    #     dist2 = dist.min(dim=1)[0]  # (B, M)
+
+    #     chamfer = (dist1.mean(dim=1) + dist2.mean(dim=1)).mean()  # scalar
+    #     return chamfer
 
     def register_schedule(self):
         '''
@@ -107,18 +149,83 @@ class BrownianBridgeModel(nn.Module):
         :return: loss
         """
         b, c, h, w = x0.shape
+        # compute random noise. 
         noise = default(noise, lambda: torch.randn_like(x0))
         x_t, objective = self.q_sample(x0, y, t, noise)
         objective_recon = self.denoise_fn(x_t, timesteps=t, context=context)
+        if objective_recon.requires_grad:
+            objective_recon.register_hook(lambda grad: print(f"'objective_recon'Grad norm: {grad.norm().item()}"))
+
+        x0_recon = self.predict_x0_from_objective(x_t, y, t, objective_recon)
+        if x0_recon.requires_grad:
+            x0_recon.register_hook(lambda grad: print(f"'x0_recon'Grad norm: {grad.norm().item()}"))
+
+        # print("x0_recon: Requires grad?", x0_recon.requires_grad)
+        # print("x0_recon: Grad fn?", x0_recon.grad_fn)
 
         if self.loss_type == 'l1':
             recloss = (objective - objective_recon).abs().mean()
         elif self.loss_type == 'l2':
             recloss = F.mse_loss(objective, objective_recon)
+        elif self.loss_type == 'chamfer':
+            # decode the latents of x0 and x0_recon
+            range_x0 = self.decode_lidar(x0)
+            if range_x0.requires_grad:
+                range_x0.register_hook(lambda grad: print(f"'range_x0' Grad norm: {grad.norm().item()}"))
+
+            range_x0_recon = self.decode_lidar(x0_recon) #TODO fix decode lidar to allow for gradient tracking. 
+            if range_x0_recon.requires_grad:
+                range_x0_recon.register_hook(lambda grad: print(f"'range_x0_recon' Grad norm: {grad.norm().item()}"))
+
+            # print("range_x0: Requires grad?", range_x0.requires_grad)
+            # print("range_x0: Grad fn?", range_x0.grad_fn)
+
+            # convert to 3D point clouds
+            pc_x0 = self.range_to_pointcloud(range_x0)
+            if pc_x0.requires_grad:
+                pc_x0.register_hook(lambda grad: print(f"'pc_x0' Grad norm: {grad.norm().item()}"))
+            pc_x0_recon = self.range_to_pointcloud(range_x0_recon)
+            if pc_x0_recon.requires_grad:
+                pc_x0_recon.register_hook(lambda grad: print(f"'pc_x0_recon' Grad norm: {grad.norm().item()}"))
+
+            # print("pc_x0: Requires grad?", pc_x0.requires_grad)
+            # print("pc_x0: Grad fn?", pc_x0.grad_fn)
+
+            # choose a 3D loss like Chamfer Distance # TODO try using pytorch3d instead, or torchmetrics.
+            # cd_loss = self.chamfer_dist(pc_x0_recon[..., :3], pc_x0[..., :3]) # keep only the first 3 dimensions (x,y,z) and omit intensity.
+            chamfer, _ = chamfer_distance(pc_x0_recon, pc_x0) # this should actually use the intensity i think.
+            if chamfer.requires_grad:
+                chamfer.register_hook(lambda grad: print(f"'chamfer' Grad norm: {grad.norm().item()}"))
+
+            chamfer.detach()
+            # print("chamfer: Requires grad?", chamfer.requires_grad)
+            # print("chamfer: Grad fn?", chamfer.grad_fn)
+
+            # optionally combine with the image based loss:
+            recloss = (objective - objective_recon).abs().mean()
+            if recloss.requires_grad:
+                recloss.register_hook(lambda grad: print(f"'recloss original' Grad norm: {grad.norm().item()}"))
+            scaled_chamfer = torch.log1p(chamfer)  # log(1 + x), safe and smooth
+            if scaled_chamfer.requires_grad:
+                scaled_chamfer.register_hook(lambda grad: print(f"'scaled_chamfer' Grad norm: {grad.norm().item()}"))
+            recloss = recloss * scaled_chamfer
+            if recloss.requires_grad:
+                recloss.register_hook(lambda grad: print(f"'recloss' Grad norm: {grad.norm().item()}"))
+
+            # Check for division by zero
+            # if (x == 0).any():
+            #     print("Zero division detected!")
+
+            # # Check for log(0)
+            # if (x <= 0).any():
+            #     print("Log(0) detected!")
+
+            # print("recloss: Requires grad?", recloss.requires_grad)
+            # print("recloss: Grad fn?", recloss.grad_fn)
         else:
             raise NotImplementedError()
 
-        x0_recon = self.predict_x0_from_objective(x_t, y, t, objective_recon)
+        
         log_dict = {
             "loss": recloss,
             "x0_recon": x0_recon

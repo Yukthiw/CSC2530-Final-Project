@@ -33,6 +33,10 @@ class LatentBrownianBridgeModel(BrownianBridgeModel):
                                        device,
                                        model_config.BB.params.UNetParams.use_fp16)
 
+        # # freeze the weights of the lidar encoder to prevent gradient update. 
+        # for param in self.lidar_encoder.vae.parameters():
+        #     param.requires_grad = False
+
     # TODO: Figure out exactly how ema works and whether we want to use it
     def get_ema_net(self):
         return self
@@ -63,7 +67,7 @@ class LatentBrownianBridgeModel(BrownianBridgeModel):
         x_latent = model.encode_range_image(x)
         return x_latent
 
-    @torch.no_grad()
+    @torch.no_grad() # need to get rid of this for the loss function that uses the point cloud version. Freeze the weights elsewhere. 
     def decode_lidar(self, x_latent):
         model = self.lidar_encoder
         out = model.decode_range_image(x_latent)

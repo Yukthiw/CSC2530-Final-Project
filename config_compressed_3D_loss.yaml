@@ -2,9 +2,9 @@
 # Latent Brownian Bridge Diffusion Model Template(Latent Space)
 training:
   n_epochs: 50
-  n_steps: 200000
-  save_interval: 10000
-  val_interval: 500
+  n_steps: 200000 #10000 # 200000
+  save_interval: 10
+  val_interval: 10
 data:
   clean_data_path: "/w/247/yukthiw/nuscenes_data/nuscenes/"
   noisy_data_path: "/w/246/willdormer/projects/CompImaging/augmented_pointclouds/samples/LIDAR_TOP/"
@@ -19,7 +19,7 @@ data:
     # shuffle: False
 
 model:
-  model_name: "C-LBBDM-Compressed" # part of result path
+  model_name: "C-LBBDM-3DLoss" # part of result path
   model_type: "C-LBBDM" # specify a module
   normalize_latent: False
   only_load_latent_mean_std: False
@@ -55,7 +55,7 @@ model:
     params:
       mt_type: 'linear' # options {'linear', 'sin'}
       objective: 'grad' # options {'grad', 'noise', 'ysubx'}
-      loss_type: 'l1' # options {'l1', 'l2'}
+      loss_type: 'chamfer' # options {'l1', 'l2', 'chamfer'}
 
       skip_sample: True
       sample_type: 'linear' # options {"linear", "sin"}
@@ -63,7 +63,7 @@ model:
 
       num_timesteps: 1000 # timesteps
       eta: 1.0 # DDIM reverse process eta
-      max_var: 1.0 # maximum variance
+      max_var: 1.0 #1.0 maximum variance
 
       UNetParams:
         image_size: [256, 8]

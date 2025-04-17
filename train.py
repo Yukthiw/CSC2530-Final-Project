@@ -35,21 +35,24 @@ def train_cbbdm(
     val_interval: int = 1000,
     save_interval: int = 5000,
     max_steps: int = None,
-    clip_grad_norm: float = None,
-    resume_from: str = None,
-    use_fp16: bool = False,
+    clip_grad_norm: float = None, 
+    resume_from: str = None, # resume from a checkpoint
+    use_fp16: bool = False, # use 16 bit floating point precision
 ):
     step = 0
 
+    # set the paths for saving results.
     checkpoint_path = f"{log_dir}/checkpoints/"
     log_path =  f"{log_dir}/logs/"
     val_recon_path = f"{log_dir}/validation/"
     os.makedirs(checkpoint_path, exist_ok=True)
     os.makedirs(log_path, exist_ok=True)
     os.makedirs(val_recon_path, exist_ok=True)
+    # lists to hold the losses during trianing.
     train_losses = []
     val_losses = []
 
+    # if resuming from a previous checkpoint
     if resume_from is not None:
         print(f"Resuming from checkpoint: {resume_from}")
         checkpoint = torch.load(resume_from, map_location=device)
@@ -60,14 +63,18 @@ def train_cbbdm(
             scheduler.load_state_dict(checkpoint["scheduler"])
         print(f"Checkpoint loaded at step {step}")
 
+    # used to explicitly raise an error with a stack trace if there's a problem with gradients.
     torch.autograd.set_detect_anomaly(True)
 
+    # iterate through epochs. 
     for epoch in range(n_epochs):
         logger.info(f"Epoch {epoch + 1}/{n_epochs}")
         model.train()
         for batch in tqdm(train_loader):
+            # reset the gradients
             optimizer.zero_grad()
             step += 1
+            # send the noisy and clean lidar range images to the device. 
             x_noisy = batch["noisy_lidar_range"].to(device)
             x_clean = batch["clean_lidar_range"].to(device)
             # Need to do this because the radar encoder takes 3 sets of tensors as input
@@ -78,10 +85,14 @@ def train_cbbdm(
                 x_clean.half()
                 x_radar = [item.half() for item in x_radar]
 
+            # compute the loss of the model. 
             loss, log = model(x_noisy, x_clean, context=x_radar)
+            # backpropagation
             loss.backward()
+            # step the optimizer.
             optimizer.step()
 
+            # if using learning scheduler. 
             if scheduler is not None:
                 scheduler.step(loss.item())
             train_losses.append((step, loss.item())) 
@@ -89,6 +100,7 @@ def train_cbbdm(
             if step % 100 == 0 or step == 1:
                 logger.info(f"Step {step} | Loss: {loss:.4f}")
 
+            # perform validation
             if step % val_interval == 0:
                 model.eval()
                 with torch.no_grad():

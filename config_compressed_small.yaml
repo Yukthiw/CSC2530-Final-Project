@@ -2,7 +2,7 @@
 # Latent Brownian Bridge Diffusion Model Template(Latent Space)
 training:
   n_epochs: 50
-  n_steps: 200000
+  n_steps: 200000 #10000 # 200000
   save_interval: 10000
   val_interval: 500
 data:
@@ -19,7 +19,7 @@ data:
     # shuffle: False
 
 model:
-  model_name: "C-LBBDM-Compressed" # part of result path
+  model_name: "C-LBBDM-Low-Variance-Long" # part of result path
   model_type: "C-LBBDM" # specify a module
   normalize_latent: False
   only_load_latent_mean_std: False
@@ -63,7 +63,7 @@ model:
 
       num_timesteps: 1000 # timesteps
       eta: 1.0 # DDIM reverse process eta
-      max_var: 1.0 # maximum variance
+      max_var: 1.0 #1.0 maximum variance
 
       UNetParams:
         image_size: [256, 8]
