@@ -38,6 +38,7 @@ def train_cbbdm(
     clip_grad_norm: float = None,
     resume_from: str = None,
     use_fp16: bool = False,
+    finetune: bool = False,
 ):
     step = 0
 
@@ -53,12 +54,13 @@ def train_cbbdm(
     if resume_from is not None:
         print(f"Resuming from checkpoint: {resume_from}")
         checkpoint = torch.load(resume_from, map_location=device)
-        model.load_state_dict(checkpoint["model"])
-        optimizer.load_state_dict(checkpoint["optimizer"])
-        step = checkpoint.get("step", 0)
-        if scheduler and "scheduler" in checkpoint:
-            scheduler.load_state_dict(checkpoint["scheduler"])
-        print(f"Checkpoint loaded at step {step}")
+        model.load_state_dict(checkpoint["model"], strict=False)
+        if not finetune:
+            optimizer.load_state_dict(checkpoint["optimizer"])
+            step = checkpoint.get("step", 0)
+            if scheduler and "scheduler" in checkpoint:
+                scheduler.load_state_dict(checkpoint["scheduler"])
+        print(f"Checkpoint loaded at step {step}, finetuning = {finetune}")
 
     torch.autograd.set_detect_anomaly(True)
 
@@ -110,6 +112,7 @@ def train_cbbdm(
                         val_recon = model.sample(val_noisy, val_radar)
                         np.save(f"{val_recon_path}validation_epoch_{epoch}_step_{step}.npy", val_recon.cpu().numpy())
                         np.save(f"{val_recon_path}gt_epoch_{epoch}_step_{step}.npy", val_clean.cpu().numpy())
+                        np.save(f"{val_recon_path}noisy_epoch_{epoch}_step_{step}.npy", val_noisy.cpu().numpy())
                 model.train()
 
             if step % save_interval == 0:
@@ -201,7 +204,8 @@ def main():
         val_interval=config.training.val_interval,
         save_interval=config.training.save_interval,
         max_steps=config.training.n_steps,
-        resume_from=checkpoint_path
+        resume_from=checkpoint_path,
+        finetune=config.model.finetune,
     )
 
 import os

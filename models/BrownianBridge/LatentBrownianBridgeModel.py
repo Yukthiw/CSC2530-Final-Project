@@ -16,15 +16,19 @@ def disabled_train(self, mode=True):
     does not change anymore."""
     return self
 
+import logging
+import os
+
 
 class LatentBrownianBridgeModel(BrownianBridgeModel):
     def __init__(self, model_config, device):
         super().__init__(model_config)
 
         # Loading Radar Encoder
-        self.radar_encoder = VoxelNet()
-        encoder_checkpoint = torch.load(model_config.RADAR_ENCODER.checkpoint_path)
-        self.radar_encoder.load_state_dict(encoder_checkpoint['radar_encoder_state_dict'])
+        if model_config.BB.params.UNetParams.use_spatial_transformer:
+            self.radar_encoder = VoxelNet() 
+            encoder_checkpoint = torch.load(model_config.RADAR_ENCODER.checkpoint_path)
+            self.radar_encoder.load_state_dict(encoder_checkpoint['radar_encoder_state_dict'])
         if model_config.BB.params.UNetParams.use_fp16:
             self.radar_encoder = self.radar_encoder.half()
         
@@ -32,6 +36,15 @@ class LatentBrownianBridgeModel(BrownianBridgeModel):
                                        model_config.LIDAR_ENCODER.checkpoint_path,
                                        device,
                                        model_config.BB.params.UNetParams.use_fp16)
+        
+        if model_config.finetune:
+            self.finetune = True
+            self.ft_weight = model_config.ft_weight
+            for param in self.lidar_encoder.vae.parameters():
+                param.requires_grad = False
+            
+        else:
+            self.finetune = False
 
     # TODO: Figure out exactly how ema works and whether we want to use it
     def get_ema_net(self):
@@ -48,13 +61,13 @@ class LatentBrownianBridgeModel(BrownianBridgeModel):
             self.cond_stage_model.apply(weights_init)
         return self
 
-    def forward(self, x_noisy, x_clean, context):
+    def forward(self, x_noisy, x_clean, context=None):
         with torch.no_grad():
-            x_noisy_latent = self.encode_lidar(x_noisy)
-            x_clean_latent = self.encode_lidar(x_clean)
-            x_radar_latent = self.encode_radar(context)
+            x_noisy_latent = self.encode_lidar(x_noisy).detach()
+            x_clean_latent = self.encode_lidar(x_clean).detach()
+            x_radar_latent = self.encode_radar(context).detach() if context else None
 
-        return super().forward(x_clean_latent.detach(), x_noisy_latent.detach(), x_radar_latent.detach())
+        return super().forward(x_clean_latent, x_noisy_latent, x_radar_latent)
 
     @torch.no_grad()
     def encode_lidar(self, x, normalize=None):
@@ -78,8 +91,8 @@ class LatentBrownianBridgeModel(BrownianBridgeModel):
 
     @torch.no_grad()
     def sample(self, x_cond, x_radar, clip_denoised=False, sample_mid_step=False):
-        x_cond_latent = self.encode_lidar(x_cond)
-        x_radar_latent = self.encode_radar(x_radar)
+        x_cond_latent = self.encode_lidar(x_cond).detach()
+        x_radar_latent = self.encode_radar(x_radar).detach() if x_radar else None
         if sample_mid_step:
             temp, one_step_temp = self.p_sample_loop(y=x_cond_latent,
                                                      context=x_radar_latent,
@@ -101,8 +114,8 @@ class LatentBrownianBridgeModel(BrownianBridgeModel):
                 one_step_samples.append(out.to('cpu'))
             return out_samples, one_step_samples
         else:
-            temp = self.p_sample_loop(y=x_cond_latent.detach(),
-                                      context=x_radar_latent.detach(),
+            temp = self.p_sample_loop(y=x_cond_latent,
+                                      context=x_radar_latent,
                                       clip_denoised=clip_denoised,
                                       sample_mid_step=sample_mid_step)
             x_latent = temp
