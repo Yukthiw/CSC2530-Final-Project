@@ -23,6 +23,7 @@ model:
   model_type: "C-LBBDM" # specify a module
   normalize_latent: False
   only_load_latent_mean_std: False
+  finetune: False
 
   # model_load_path:  # model checkpoint path
   # optim_sche_load_path:  # optimizer scheduler checkpoint path
