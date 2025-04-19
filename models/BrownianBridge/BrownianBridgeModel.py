@@ -41,6 +41,14 @@ class BrownianBridgeModel(nn.Module):
 
         self.denoise_fn = UNetModelV2(**vars(model_params.UNetParams))
 
+        # Finetune sobel detectors
+        self.register_buffer("sobel_x", torch.tensor([[-1, 0, 1],
+                                              [-2, 0, 2],
+                                              [-1, 0, 1]], dtype=torch.float32).view(1, 1, 3, 3))
+        self.register_buffer("sobel_y", torch.tensor([[-1, -2, -1],
+                                                [ 0,  0,  0],
+                                                [ 1,  2,  1]], dtype=torch.float32).view(1, 1, 3, 3))
+
     def register_schedule(self):
         '''
         Pre-computing variance and mixing coefficients here for forward diffusion process.
@@ -96,6 +104,19 @@ class BrownianBridgeModel(nn.Module):
         t = torch.randint(0, self.num_timesteps, (b,), device=device).long()
         return self.p_losses(x, y, context, t)
 
+
+    def sobel_edge(self, img):
+        sobel_x = self.sobel_x.to(img.device)
+        sobel_y = self.sobel_y.to(img.device)
+        grad_x = F.conv2d(img, sobel_x, padding=1, groups=1)
+        grad_y = F.conv2d(img, sobel_y, padding=1, groups=1)  # Vertical edges
+        grad_mag = torch.sqrt(grad_x ** 2 + grad_y ** 2 + 1e-6)  # Small epsilon to avoid sqrt(0)
+
+        return grad_mag
+
+    def sobel_edge_loss(self, pred, target):
+        return F.l1_loss(self.sobel_edge(pred), self.sobel_edge(target))
+
     def p_losses(self, x0, y, context, t, noise=None):
         """
         model loss
@@ -110,15 +131,23 @@ class BrownianBridgeModel(nn.Module):
         noise = default(noise, lambda: torch.randn_like(x0))
         x_t, objective = self.q_sample(x0, y, t, noise)
         objective_recon = self.denoise_fn(x_t, timesteps=t, context=context)
-
+        x0_recon = self.predict_x0_from_objective(x_t, y, t, objective_recon)
         if self.loss_type == 'l1':
-            recloss = (objective - objective_recon).abs().mean()
+            if self.finetune:
+                obj_range = self.lidar_encoder.decode_range_image(x0_recon)
+                with torch.no_grad():
+                    gt_range = self.decode_lidar(x0.detach())
+                recloss = (objective - objective_recon).abs().mean() + self.ft_weight * self.sobel_edge_loss(obj_range[:, 0:1, :, :], gt_range[:, 0:1, :, :])
+                recloss.register_hook(lambda grad: print(f"Grad norm: {grad.norm().item()}"))
+            else:
+                recloss = (objective - objective_recon).abs().mean()
         elif self.loss_type == 'l2':
+            # We never get here but should add finetuning loss
             recloss = F.mse_loss(objective, objective_recon)
         else:
             raise NotImplementedError()
 
-        x0_recon = self.predict_x0_from_objective(x_t, y, t, objective_recon)
+        # x0_recon = self.predict_x0_from_objective(x_t, y, t, objective_recon)
         log_dict = {
             "loss": recloss,
             "x0_recon": x0_recon

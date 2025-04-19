@@ -5,6 +5,4 @@ dependencies:
   - ipykernel
   - matplotlib
   - esri::einops
-  - safetensors
-  - conda-forge::easydict
   - pip

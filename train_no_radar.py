@@ -38,7 +38,6 @@ def train_cbbdm(
     clip_grad_norm: float = None,
     resume_from: str = None,
     use_fp16: bool = False,
-    finetune: bool = False,
 ):
     step = 0
 
@@ -54,15 +53,12 @@ def train_cbbdm(
     if resume_from is not None:
         print(f"Resuming from checkpoint: {resume_from}")
         checkpoint = torch.load(resume_from, map_location=device)
-        model.load_state_dict(checkpoint["model"], strict=False)
-        if not finetune:
-            optimizer.load_state_dict(checkpoint["optimizer"])
-            step = checkpoint.get("step", 0)
-            if scheduler and "scheduler" in checkpoint:
-                scheduler.load_state_dict(checkpoint["scheduler"])
-        print(f"Checkpoint loaded at step {step}, finetuning = {finetune}")
-
-    torch.autograd.set_detect_anomaly(True)
+        model.load_state_dict(checkpoint["model"])
+        optimizer.load_state_dict(checkpoint["optimizer"])
+        step = checkpoint.get("step", 0)
+        if scheduler and "scheduler" in checkpoint:
+            scheduler.load_state_dict(checkpoint["scheduler"])
+        print(f"Checkpoint loaded at step {step}")
 
     for epoch in range(n_epochs):
         logger.info(f"Epoch {epoch + 1}/{n_epochs}")
@@ -73,14 +69,9 @@ def train_cbbdm(
             x_noisy = batch["noisy_lidar_range"].to(device)
             x_clean = batch["clean_lidar_range"].to(device)
             # Need to do this because the radar encoder takes 3 sets of tensors as input
-            x_radar = [item.to(device) for item in batch['radar_vox']]
+            # x_radar = [item.to(device) for item in batch['radar_vox']]
 
-            if use_fp16:
-                x_noisy.half()
-                x_clean.half()
-                x_radar = [item.half() for item in x_radar]
-
-            loss, log = model(x_noisy, x_clean, context=x_radar)
+            loss, log = model(x_noisy, x_clean, context=None)
             loss.backward()
             optimizer.step()
 
@@ -99,20 +90,16 @@ def train_cbbdm(
                     val_noisy = val_batch["noisy_lidar_range"].to(device)
                     val_clean = val_batch["clean_lidar_range"].to(device)
                     # Need to do this because the radar encoder takes 3 sets of tensors as input
-                    val_radar = [item.to(device) for item in val_batch['radar_vox']]
-                    if use_fp16:
-                        val_clean.half()
-                        val_noisy.half()
-                        val_radar = [item.half() for item in val_radar]
-                    val_loss, _ = model(val_noisy, val_clean, context=val_radar)
+                    # val_radar = [item.to(device) for item in val_batch['radar_vox']]
+                    val_loss, _ = model(val_noisy, val_clean, context=None)
                     val_losses.append((step, loss.item()))
                     logger.info(f"[VAL @ step {step}] Loss: {val_loss:.4f}")
 
                     if step % 2000 == 0:
-                        val_recon = model.sample(val_noisy, val_radar)
+                        val_recon = model.sample(val_noisy, None)
                         np.save(f"{val_recon_path}validation_epoch_{epoch}_step_{step}.npy", val_recon.cpu().numpy())
                         np.save(f"{val_recon_path}gt_epoch_{epoch}_step_{step}.npy", val_clean.cpu().numpy())
-                        np.save(f"{val_recon_path}noisy_epoch_{epoch}_step_{step}.npy", val_noisy.cpu().numpy())
+                        np.save(f"{val_recon_path}noisy_epoch_{epoch}_step_{step}.npy", val_clean.cpu().numpy())
                 model.train()
 
             if step % save_interval == 0:
@@ -204,8 +191,7 @@ def main():
         val_interval=config.training.val_interval,
         save_interval=config.training.save_interval,
         max_steps=config.training.n_steps,
-        resume_from=checkpoint_path,
-        finetune=config.model.finetune,
+        resume_from=checkpoint_path
     )
 
 import os

@@ -1,7 +1,7 @@
 
 # Latent Brownian Bridge Diffusion Model Template(Latent Space)
 training:
-  n_epochs: 50
+  n_epochs: 10
   n_steps: 200000
   save_interval: 10000
   val_interval: 500
@@ -19,11 +19,12 @@ data:
     # shuffle: False
 
 model:
-  model_name: "C-LBBDM-Compressed" # part of result path
+  model_name: "C-LBBDM-Compressed-SobelFT" # part of result path
   model_type: "C-LBBDM" # specify a module
   normalize_latent: False
   only_load_latent_mean_std: False
-  finetune: False
+  finetune: True
+  ft_weight: 0.1
 
   # model_load_path:  # model checkpoint path
   # optim_sche_load_path:  # optimizer scheduler checkpoint path
@@ -43,14 +44,14 @@ model:
     optimizer:
       weight_decay: 0.000
       optimizer: 'Adam'
-      lr: 1.e-4
+      lr: 1.e-5
       beta1: 0.9
 
     lr_scheduler:
       factor: 0.5
-      patience: 3000
+      patience: 500
       threshold: 0.0001
-      cooldown: 3000
+      cooldown: 500
       min_lr: 5.e-7
 
     params:
@@ -64,7 +65,7 @@ model:
 
       num_timesteps: 1000 # timesteps
       eta: 1.0 # DDIM reverse process eta
-      max_var: 1.0 # maximum variance
+      max_var: 0.8 # maximum variance
 
       UNetParams:
         image_size: [256, 8]

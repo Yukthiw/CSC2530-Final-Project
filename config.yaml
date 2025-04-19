@@ -19,10 +19,11 @@ data:
     # shuffle: False
 
 model:
-  model_name: "C-LBBDM-1CA" # part of result path
+  model_name: "C-LBBDM-V1" # part of result path
   model_type: "C-LBBDM" # specify a module
   normalize_latent: False
   only_load_latent_mean_std: False
+  finetune: False
 
   # model_load_path:  # model checkpoint path
   # optim_sche_load_path:  # optimizer scheduler checkpoint path
