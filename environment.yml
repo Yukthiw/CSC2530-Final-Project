@@ -1,10 +1,8 @@
-name: test2
+name: bbdm_lidar
 dependencies:
   - python=3.10
   - opencv
   - ipykernel
   - matplotlib
   - esri::einops
-  - safetensors
-  - conda-forge::easydict
   - pip

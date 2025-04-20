@@ -367,11 +367,6 @@ if __name__ == '__main__':
     point_cloud_array = np.load("../augmented_pointcloud.npy")
     point_cloud_array = point_cloud_array[:,0:3]
 
-    '''
-    I'm not entirely sure about the settings of the lidar that was used, since this depends
-    on things like alpha and beta. 
-    '''
-
     # they used a Velodyne HDL32E, 20Hz capture freq, 32 beams, 1080 points per ring, 32 channels.
     # assuming a 360 degree horizontal FOV with ~1800 points per rotation, not sure if this is right
     # then we have 360 deg / 1800 ~= 0.2 deg
