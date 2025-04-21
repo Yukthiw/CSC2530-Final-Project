@@ -1,12 +1,12 @@
 import numpy as np
 
-# import sys
-# import os
+import sys
+import os
 
 # sys.path.append(os.path.dirname(__file__))
-
-from tools.snowfall.simulation import augment
-from tools.snowfall.sampling import snowfall_rate_to_rainfall_rate, compute_occupancy
+sys.path.append(os.path.abspath('..'))
+from utils.weather_augmentation.tools.snowfall.simulation import augment
+from utils.weather_augmentation.tools.snowfall.sampling import snowfall_rate_to_rainfall_rate, compute_occupancy
 
 dtype = np.float32
 num_features = 5

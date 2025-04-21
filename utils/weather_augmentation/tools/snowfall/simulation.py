@@ -21,10 +21,10 @@ import multiprocessing as mp
 # try setting it to use spawn instead of fork. 
 # mp.set_start_method("spawn", force=True)
 
-import tools.snowfall.geometry as g
+import utils.weather_augmentation.tools.snowfall.geometry as g
 
-from tools.wet_ground.planes import calculate_plane
-from tools.wet_ground.augmentation import estimate_laser_parameters
+from utils.weather_augmentation.tools.wet_ground.planes import calculate_plane
+from utils.weather_augmentation.tools.wet_ground.augmentation import estimate_laser_parameters
 
 PI = np.pi
 DEBUG = False

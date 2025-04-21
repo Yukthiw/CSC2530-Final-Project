@@ -10,9 +10,9 @@ from scipy.stats import linregress
 
 try:
 
-    from utils import plot_2d_hist
-    from planes import calculate_plane
-    from phy_equations import total_transmittance_from_ground
+    from utils.weather_augmentation.tools.wet_ground.utils import plot_2d_hist
+    from utils.weather_augmentation.tools.wet_ground.planes import calculate_plane
+    from utils.weather_augmentation.tools.wet_ground.phy_equations import total_transmittance_from_ground
 
 except ModuleNotFoundError:
 

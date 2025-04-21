@@ -115,7 +115,7 @@ class AnalyzePointCloud:
             bounds = np.array([pc.min(axis=0), pc.max(axis=0)])  # shape: (2, 3)
         range_tuples = [(bounds[0][i], bounds[1][i]) for i in range(pc.shape[1])]
         bins = np.ceil((bounds[1] - bounds[0]) / voxel_size).astype(int)
-        print("bins: ", bins)
+        # print("bins: ", bins)
         grid, _ = np.histogramdd(pc, bins=bins, range=range_tuples)
         return grid
     
